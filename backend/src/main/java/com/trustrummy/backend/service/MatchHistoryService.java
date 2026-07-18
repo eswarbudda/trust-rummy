@@ -123,7 +123,7 @@ public class MatchHistoryService {
     }
 
     private GameSession getSessionForParticipant(Long sessionId, Long userId) {
-        GameSession session = gameSessionRepository.findById(sessionId)
+        GameSession session = gameSessionRepository.findWithDetailsById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Match not found: " + sessionId));
 
         boolean participant = roomPlayerRepository
