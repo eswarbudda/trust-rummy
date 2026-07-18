@@ -1,0 +1,33 @@
+name: trust_rummy_app
+description: "Trust Rummy - real-time multiplayer Rummy client (Flutter)."
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # REST (Auth / Wallet / Rooms)
+  http: ^1.2.1
+
+  # Real-time gameplay + telemetry channel
+  web_socket_channel: ^2.4.5
+
+  # Lightweight state management for the connection/session state
+  provider: ^6.1.2
+
+  # Local persistence of the JWT between app launches
+  shared_preferences: ^2.2.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.2
+
+flutter:
+  uses-material-design: true
