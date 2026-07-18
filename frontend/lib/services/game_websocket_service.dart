@@ -63,17 +63,28 @@ class GameWebSocketService {
 
     try {
       final uri = ApiConfig.gameWsUri(roomCode, jwt);
-      _channel = WebSocketChannel.connect(uri);
+      final channel = WebSocketChannel.connect(uri);
 
-      _subscription = _channel!.stream.listen(
+      // `WebSocketChannel.connect` returns synchronously, before the
+      // handshake (including the backend's JWT check in
+      // JwtHandshakeInterceptor) actually completes. Awaiting `ready` is
+      // what actually confirms the connection — and surfaces a rejected
+      // handshake (e.g. expired/invalid token, server down) as an error
+      // instead of leaving the UI showing "connected" against a socket
+      // that never truly opened, which previously let Draw/Discard button
+      // presses vanish into a dead channel with zero feedback.
+      await channel.ready;
+
+      _channel = channel;
+      _subscription = channel.stream.listen(
         _handleMessage,
         onError: (_) => _setState(SocketConnectionState.error),
         onDone: () => _setState(SocketConnectionState.disconnected),
       );
 
-      // Optimistic; the first ROOM_STATE payload confirms the server side too.
       _setState(SocketConnectionState.connected);
     } catch (_) {
+      _channel = null;
       _setState(SocketConnectionState.error);
     }
   }
@@ -108,9 +119,23 @@ class GameWebSocketService {
 
   void _send(Map<String, dynamic> action) {
     if (_channel == null || _state != SocketConnectionState.connected) {
+      _eventController.add(GameSocketEvent('CLIENT_ERROR', {
+        'message': 'Not connected — action "${action['type']}" was not sent',
+      }));
       return;
     }
-    _channel!.sink.add(jsonEncode(action));
+    try {
+      _channel!.sink.add(jsonEncode(action));
+    } catch (e) {
+      // A write to a dead/closing channel (e.g. the server's idle timeout
+      // already closed it) used to throw straight out of a button's
+      // onPressed callback with no visible feedback. Surface it through
+      // the normal event stream instead so the test screen can show it.
+      _setState(SocketConnectionState.error);
+      _eventController.add(GameSocketEvent('CLIENT_ERROR', {
+        'message': 'Failed to send action "${action['type']}": $e',
+      }));
+    }
   }
 
   void _handleMessage(dynamic message) {

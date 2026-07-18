@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../services/auth_api_service.dart';
@@ -41,6 +43,21 @@ class _GameTestScreenState extends State<GameTestScreen> {
   List<RoomPlayerSummary> _seatedPlayers = [];
   bool _isReady = false;
 
+  /// Surfaced prominently (separately from [_errorMessage], which is only
+  /// for REST/setup failures) whenever an `ERROR` (server-rejected action,
+  /// e.g. "It is not your turn") or `CLIENT_ERROR` (the socket wasn't
+  /// actually open when we tried to send) event arrives on the game
+  /// socket. Previously these either required scrolling the raw traffic
+  /// log to notice, or — for the client-side case — never existed at all.
+  String? _wsErrorMessage;
+
+  /// From the JWT's `sub` claim — lets us work out which seated player is
+  /// "me" so we can show whose turn it actually is next to the action
+  /// buttons, instead of just guessing and getting a silent-looking
+  /// "It is not your turn" rejection.
+  String? _myUsername;
+  int? _currentTurnUserId;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +67,12 @@ class _GameTestScreenState extends State<GameTestScreen> {
     _gameWs.eventStream.listen((event) {
       setState(() {
         _lastEventType = event.type;
+        if (event.type == 'ERROR' || event.type == 'CLIENT_ERROR') {
+          _wsErrorMessage = event.raw['message']?.toString() ?? 'Unknown error';
+          return;
+        }
+        _wsErrorMessage = null;
+
         // Both the pre-match ROOM_STATE shape and the in-deal snapshot shape
         // carry userId/username/seatNumber among other fields, so this same
         // mapping works for either — RoomPlayerSummary.fromJson just ignores
@@ -61,6 +84,10 @@ class _GameTestScreenState extends State<GameTestScreen> {
               .map(RoomPlayerSummary.fromJson)
               .toList();
         }
+        final turnUserId = event.raw['currentTurnUserId'];
+        if (turnUserId is int) {
+          _currentTurnUserId = turnUserId;
+        }
       });
     });
     _gameWs.rawStream.listen((raw) {
@@ -71,6 +98,33 @@ class _GameTestScreenState extends State<GameTestScreen> {
       _scrollToBottom();
     });
   }
+
+  /// Decodes the `sub` (username) claim out of the JWT payload — client-side
+  /// only, no signature check (the server already validated it at connect
+  /// time); this is purely so the UI can label whose turn it is.
+  void _decodeMyUsernameFrom(String jwt) {
+    try {
+      final parts = jwt.split('.');
+      if (parts.length != 3) return;
+      final normalized = base64Url.normalize(parts[1]);
+      final payload = jsonDecode(utf8.decode(base64Url.decode(normalized))) as Map<String, dynamic>;
+      _myUsername = payload['sub']?.toString();
+    } catch (_) {
+      _myUsername = null;
+    }
+  }
+
+  /// My own seated userId, resolved by matching [_myUsername] against the
+  /// last known seated-player list (which carries both userId and username).
+  int? get _myUserId {
+    if (_myUsername == null) return null;
+    for (final p in _seatedPlayers) {
+      if (p.username == _myUsername) return p.userId;
+    }
+    return null;
+  }
+
+  bool get _isMyTurn => _myUserId != null && _myUserId == _currentTurnUserId;
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -186,7 +240,11 @@ class _GameTestScreenState extends State<GameTestScreen> {
         if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
           throw Exception('Need a JWT and a room code before connecting');
         }
+        _decodeMyUsernameFrom(_tokenController.text.trim());
         await _gameWs.connect(_roomCodeController.text.trim(), _tokenController.text.trim());
+        if (_gameWs.state != SocketConnectionState.connected) {
+          throw Exception('Game socket did not confirm connection (handshake rejected — check the JWT is still valid)');
+        }
       });
 
   void _disconnect() {
@@ -288,6 +346,30 @@ class _GameTestScreenState extends State<GameTestScreen> {
                     child: Text(
                       _errorMessage!,
                       style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                    ),
+                  ),
+                ],
+                if (_wsErrorMessage != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orangeAccent.withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Game socket rejected the last action: $_wsErrorMessage',
+                            style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -475,6 +557,8 @@ class _GameTestScreenState extends State<GameTestScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text('Game actions', style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 6),
+          if (_currentTurnUserId != null) _buildTurnIndicator(),
           const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: _connected ? _sendStartMatch : null,
@@ -540,6 +624,30 @@ class _GameTestScreenState extends State<GameTestScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// Makes turn ownership explicit so a rejected Draw/Discard reads as
+  /// "you clicked out of turn" rather than "the button is broken".
+  Widget _buildTurnIndicator() {
+    final matches = _seatedPlayers.where((p) => p.userId == _currentTurnUserId);
+    final label = matches.isNotEmpty ? matches.first.username : 'user #$_currentTurnUserId';
+    final mine = _isMyTurn;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: (mine ? Colors.greenAccent : Colors.white24).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: mine ? Colors.greenAccent.withOpacity(0.4) : Colors.white24),
+      ),
+      child: Text(
+        mine ? 'Your turn ($label)' : "Waiting on $label's turn",
+        style: TextStyle(
+          color: mine ? Colors.greenAccent : Colors.white70,
+          fontSize: 12,
+          fontWeight: mine ? FontWeight.bold : FontWeight.normal,
+        ),
       ),
     );
   }

@@ -72,6 +72,15 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         String roomCode = (String) session.getAttributes().get(ROOM_CODE_ATTR);
         Long userId = (Long) session.getAttributes().get(USER_ID_ATTR);
         if (roomCode == null || userId == null) {
+            // Never drop a message with zero client-visible feedback — every
+            // other failure path below reports an ERROR event. Since this
+            // session was never fully registered, we can't route through
+            // GameBroadcastService (it looks up by roomCode+userId), so we
+            // send directly on the raw session instead.
+            log.warn("Game action dropped: session id={} has no roomCode/userId attributes (handshake never completed?)",
+                    session.getId());
+            sendDirect(session, GameEvent.of(EventType.ERROR)
+                    .with("message", "Session not fully established — reconnect and try again"));
             return;
         }
 
@@ -118,6 +127,17 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             session.close(status);
         } catch (Exception ex) {
             log.debug("Failed to close rejected game socket", ex);
+        }
+    }
+
+    /** Sends straight to this session, bypassing {@link GameBroadcastService}'s roomCode+userId registry lookup. */
+    private void sendDirect(WebSocketSession session, GameEvent event) {
+        try {
+            if (session.isOpen()) {
+                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(event)));
+            }
+        } catch (Exception ex) {
+            log.error("Failed to send direct game event to unregistered session id={}", session.getId(), ex);
         }
     }
 }
