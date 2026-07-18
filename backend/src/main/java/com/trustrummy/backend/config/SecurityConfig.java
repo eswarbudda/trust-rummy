@@ -51,7 +51,7 @@ public class SecurityConfig {
                 // Rule 1: no server-side session state whatsoever.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         // Rule 2: the raw HTTP entry point of the WS upgrade is allowed through
                         // Spring Security; JwtHandshakeInterceptor performs the real check.

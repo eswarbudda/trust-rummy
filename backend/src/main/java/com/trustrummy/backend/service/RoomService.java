@@ -2,9 +2,12 @@ package com.trustrummy.backend.service;
 
 import com.trustrummy.backend.dto.RoomCreateRequest;
 import com.trustrummy.backend.entity.GameRoom;
+import com.trustrummy.backend.entity.PlayerStatus;
 import com.trustrummy.backend.entity.RoomPlayer;
 import com.trustrummy.backend.entity.RoomStatus;
 import com.trustrummy.backend.entity.User;
+import com.trustrummy.backend.exception.ForbiddenOperationException;
+import com.trustrummy.backend.exception.ResourceNotFoundException;
 import com.trustrummy.backend.game.model.GameVariant;
 import com.trustrummy.backend.game.ws.EventType;
 import com.trustrummy.backend.game.ws.GameBroadcastService;
@@ -16,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -69,6 +73,11 @@ public class RoomService {
         return gameRoomRepository.findByStatus(RoomStatus.WAITING);
     }
 
+    public GameRoom getRoomByCode(String roomCode) {
+        return gameRoomRepository.findByRoomCode(roomCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found: " + roomCode));
+    }
+
     /**
      * Seats a user into an existing room by code. This is the piece that was
      * previously missing: connecting the game WebSocket only registers a
@@ -81,8 +90,7 @@ public class RoomService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown user: " + username));
 
-        GameRoom room = gameRoomRepository.findByRoomCode(roomCode)
-                .orElseThrow(() -> new IllegalArgumentException("Room not found: " + roomCode));
+        GameRoom room = getRoomByCode(roomCode);
 
         if (room.getStatus() != RoomStatus.WAITING) {
             throw new IllegalStateException("Room is no longer accepting players");
@@ -90,10 +98,19 @@ public class RoomService {
 
         Optional<RoomPlayer> existing = roomPlayerRepository.findByGameRoomIdAndUserId(room.getId(), user.getId());
         if (existing.isPresent()) {
-            return room; // idempotent: reconnect/refresh shouldn't fail or double-seat
+            RoomPlayer player = existing.get();
+            if (player.getStatus() == PlayerStatus.LEFT) {
+                // Re-joining after having left — reactivate the same seat rather than
+                // inserting a second row (room_id, user_id) is a unique constraint.
+                player.setStatus(PlayerStatus.JOINED);
+                player.setLeftAt(null);
+                roomPlayerRepository.save(player);
+                broadcastRoomState(room);
+            }
+            return room; // otherwise idempotent: reconnect/refresh shouldn't fail or double-seat
         }
 
-        List<RoomPlayer> seated = roomPlayerRepository.findByGameRoomId(room.getId());
+        List<RoomPlayer> seated = getSeatedPlayers(room.getId());
         if (seated.size() >= room.getMaxPlayers()) {
             throw new IllegalStateException("Room is full");
         }
@@ -114,13 +131,96 @@ public class RoomService {
         return room;
     }
 
+    /**
+     * Un-seats the caller from a room that hasn't started yet. If the host
+     * leaves, the whole room is disbanded — nobody else has "host powers"
+     * (only {@code GameRoom.createdBy} can send START_MATCH), so a
+     * host-less waiting room could never actually start.
+     */
+    public void leaveRoom(String username, String roomCode) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown user: " + username));
+
+        GameRoom room = getRoomByCode(roomCode);
+        if (room.getStatus() != RoomStatus.WAITING) {
+            throw new IllegalStateException("Cannot leave a room that has already started; drop from the active match instead");
+        }
+
+        RoomPlayer player = roomPlayerRepository.findByGameRoomIdAndUserId(room.getId(), user.getId())
+                .filter(rp -> rp.getStatus() != PlayerStatus.LEFT)
+                .orElseThrow(() -> new ResourceNotFoundException("You are not seated in this room"));
+
+        boolean isHost = room.getCreatedBy() != null && room.getCreatedBy().getId().equals(user.getId());
+        if (isHost) {
+            disbandRoom(room);
+        } else {
+            player.setStatus(PlayerStatus.LEFT);
+            player.setLeftAt(Instant.now());
+            roomPlayerRepository.save(player);
+            broadcastRoomState(room);
+        }
+    }
+
+    /** Host-only: closes a waiting room before it starts. */
+    public void cancelRoom(String username, String roomCode) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown user: " + username));
+
+        GameRoom room = getRoomByCode(roomCode);
+        if (room.getCreatedBy() == null || !room.getCreatedBy().getId().equals(user.getId())) {
+            throw new ForbiddenOperationException("Only the host can cancel this room");
+        }
+        if (room.getStatus() != RoomStatus.WAITING) {
+            throw new IllegalStateException("Only a room that hasn't started can be cancelled");
+        }
+
+        disbandRoom(room);
+    }
+
+    /** Toggles the caller's ready flag. Purely informational for now — START_MATCH does not currently require it. */
+    public GameRoom setReady(String username, String roomCode, boolean ready) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown user: " + username));
+
+        GameRoom room = getRoomByCode(roomCode);
+        if (room.getStatus() != RoomStatus.WAITING) {
+            throw new IllegalStateException("Room is no longer in the lobby");
+        }
+
+        RoomPlayer player = roomPlayerRepository.findByGameRoomIdAndUserId(room.getId(), user.getId())
+                .filter(rp -> rp.getStatus() == PlayerStatus.JOINED || rp.getStatus() == PlayerStatus.READY)
+                .orElseThrow(() -> new ResourceNotFoundException("You are not seated in this room"));
+
+        player.setStatus(ready ? PlayerStatus.READY : PlayerStatus.JOINED);
+        roomPlayerRepository.save(player);
+        broadcastRoomState(room);
+
+        return room;
+    }
+
+    /** Currently-seated players (excludes anyone who has {@code LEFT}), sorted by seat number. */
     public List<RoomPlayer> getSeatedPlayers(Long roomId) {
-        List<RoomPlayer> seated = new ArrayList<>(roomPlayerRepository.findByGameRoomId(roomId));
+        List<RoomPlayer> seated = new ArrayList<>(roomPlayerRepository.findByGameRoomIdAndStatusNot(roomId, PlayerStatus.LEFT));
         seated.sort(Comparator.comparing(rp -> rp.getSeatNumber() == null ? Integer.MAX_VALUE : rp.getSeatNumber()));
         return seated;
     }
 
-    /** Lets any already-connected sockets in the room see the new seat count without reconnecting. */
+    private void disbandRoom(GameRoom room) {
+        room.setStatus(RoomStatus.CANCELLED);
+        gameRoomRepository.save(room);
+
+        Instant now = Instant.now();
+        getSeatedPlayers(room.getId()).forEach(rp -> {
+            rp.setStatus(PlayerStatus.LEFT);
+            rp.setLeftAt(now);
+            roomPlayerRepository.save(rp);
+        });
+
+        gameStateService.remove(room.getRoomCode());
+        broadcastRoomState(room);
+    }
+
+    /** Lets any already-connected sockets in the room see the new seat/status without reconnecting. */
     private void broadcastRoomState(GameRoom room) {
         List<Map<String, Object>> players = getSeatedPlayers(room.getId()).stream()
                 .map(rp -> {
@@ -128,6 +228,7 @@ public class RoomService {
                     p.put("userId", rp.getUser().getId());
                     p.put("username", rp.getUser().getUsername());
                     p.put("seatNumber", rp.getSeatNumber());
+                    p.put("status", rp.getStatus().name());
                     return p;
                 })
                 .toList();

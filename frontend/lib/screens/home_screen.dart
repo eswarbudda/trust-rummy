@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'account_test_screen.dart';
 import 'game_test_screen.dart';
 import 'telemetry_screen.dart';
 
-/// Simple launcher between the two backend-connectivity test tools built so
-/// far. No product UI lives here yet — just picks which test harness to open.
+/// Simple launcher between the backend-connectivity test tools built so far.
+/// No product UI lives here yet — just picks which test harness to open.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -25,7 +26,15 @@ class HomeScreen extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const GameTestScreen()),
                   ),
                   icon: const Icon(Icons.videogame_asset),
-                  label: const Text('Game Engine Connection Test'),
+                  label: const Text('Game Engine + Lobby Connection Test'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AccountTestScreen()),
+                  ),
+                  icon: const Icon(Icons.account_circle),
+                  label: const Text('Account, Wallet & History Test'),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(

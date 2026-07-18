@@ -171,18 +171,63 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 - `recordMove` — appends a `GameMoveLog` row per draw/discard/declare/drop (sequence-numbered per room).
 - `recordMatchEnd` — closes the `GameSession` (winner, `endedAt`), writes each player's final `cumulativeScore` onto their `RoomPlayer.score`, flips the room to `COMPLETED`.
 
-## 11. Room join REST contract
+## 11. Room lobby REST contract
 
-Connecting the game WebSocket does **not** seat a player — it only opens a channel for broadcasts. A player must be seated (a `RoomPlayer` row) before `START_MATCH` will count them. The room creator is auto-seated at seat `0` by `POST /api/v1/rooms`; every other player must call:
+Connecting the game WebSocket does **not** seat a player — it only opens a channel for broadcasts. A player must be seated (a `RoomPlayer` row) before `START_MATCH` will count them. The room creator is auto-seated at seat `0` by `POST /api/v1/rooms`. All routes below require `Authorization: Bearer <jwt>` and, on success, broadcast a `ROOM_STATE` event (with the updated `players[]`) to any sockets already connected to that room — so already-open clients see the change without reconnecting.
 
-```
-POST /api/v1/rooms/{roomCode}/join      (Authorization: Bearer <jwt>, no body)
-```
+| Method | Route | Body | Behavior |
+|---|---|---|---|
+| `GET` | `/api/v1/rooms/{roomCode}` | — | Room detail incl. `players[]`. `404` if the room code doesn't exist. |
+| `POST` | `/api/v1/rooms/{roomCode}/join` | — | Seats the caller at the next free seat. Idempotent — re-joining an already-seated (and not-`LEFT`) room is a no-op; re-joining after having `LEFT` reactivates the same seat. `404` if room not found, `409` if full or `status != WAITING`. |
+| `POST` | `/api/v1/rooms/{roomCode}/leave` | — | Un-seats the caller (marks `RoomPlayer.status = LEFT`) while `status == WAITING`. If the **host** leaves, the whole room is disbanded (`status -> CANCELLED`, every seat marked `LEFT`) — nobody else can ever send a valid `START_MATCH` for it. `404` if not seated, `409` if the room already started. |
+| `DELETE` | `/api/v1/rooms/{roomCode}` | — | Host-only: disbands a still-`WAITING` room (same effect as the host leaving). `403` if caller isn't the host, `409` if already started. |
+| `PUT` | `/api/v1/rooms/{roomCode}/ready` | `{ready: boolean}` | Toggles the caller's `RoomPlayer.status` between `JOINED`/`READY`. Purely informational for now — `START_MATCH` does not currently require all seats to be `READY`. |
 
-Seats the caller at the next free seat number and returns the same `RoomResponse` shape as create, including `players[]` (`{userId, username, seatNumber}`). Idempotent — re-joining an already-seated room returns success without double-seating. Fails with `400` if the room code doesn't exist, `409` if the room is full or already started (`status != WAITING`). On success it also broadcasts a `ROOM_STATE` event (with the updated `players[]`) to any sockets already connected to that room, so already-open clients see the new seat without reconnecting.
+`players[]` in every `RoomResponse`/`ROOM_STATE` payload here is `{userId, username, seatNumber, status}` and always excludes anyone with `status == LEFT`.
 
 ## 12. Other design decisions made while implementing
 
 - **Match start trigger**: manual — the room's host (creator) sends `START_MATCH`; it is not automatic on reaching `maxPlayers`.
 - **Deck exhaustion**: reshuffle the discard pile (minus its top card) back into the closed deck, rather than voiding the deal.
-- Only players seated (`RoomPlayer` rows) at the moment `START_MATCH` is received are dealt into the match — see section 11 for how a player gets seated.
+- Only players seated and not `LEFT` (`RoomPlayer` rows) at the moment `START_MATCH` is received are dealt into the match — see section 11 for how a player gets seated/un-seated.
+
+## 13. Account, wallet & match-history REST contract
+
+Everything here is pre-/post-game bookkeeping — none of it touches the live deal, which stays entirely on the `/ws/game/{roomCode}` socket (section 9).
+
+**Auth — `/api/v1/auth` (all routes `permitAll`, no `Authorization` header needed/used):**
+
+| Method | Route | Body | Behavior |
+|---|---|---|---|
+| `POST` | `/register` | `{username, email, password, displayName?}` | Creates the user, returns `AuthResponse` (`token`, `refreshToken`, `expiresInMs`). |
+| `POST` | `/login` | `{username, password}` | Same `AuthResponse` shape as register. |
+| `POST` | `/refresh` | `{refreshToken}` | Redeems a still-valid, unrevoked refresh token for a brand-new access + refresh token pair. **Rotates** the refresh token — the old one is marked revoked, so replaying it fails with `400`. |
+| `POST` | `/logout` | `{refreshToken?}` | The access JWT is stateless (no blocklist yet), so this only revokes the given refresh token, if any. Always `204`. |
+
+**Profile — `/api/v1/users` (JWT required):**
+
+| Method | Route | Body | Behavior |
+|---|---|---|---|
+| `GET` | `/me` | — | `{id, username, email, displayName, walletBalance, role, createdAt}`. |
+| `PUT` | `/me` | `{displayName?, email?}` | Partial update; `409`-style `400` if the new email is already taken. |
+| `PUT` | `/me/password` | `{currentPassword, newPassword}` | `400` if `currentPassword` doesn't match. |
+
+**Wallet — `/api/v1/wallet` (JWT required):**
+
+| Method | Route | Body | Behavior |
+|---|---|---|---|
+| `GET` | `/balance` | — | `{username, balance}`. |
+| `POST` | `/deposit` | `{amount}` | Credits the wallet, writes a `WalletTransaction` (`DEPOSIT`) row, returns the new balance. |
+| `POST` | `/withdraw` | `{amount}` | Debits the wallet (`409`/`400` if insufficient funds), writes a `WalletTransaction` (`WITHDRAWAL`) row. |
+| `GET` | `/transactions?page=&size=` | — | Paginated ledger, newest first. |
+
+Match stakes are **not yet** wired into this ledger — `WalletTransactionType.STAKE_DEBIT`/`STAKE_PAYOUT` exist for when that lands, but today only manual deposit/withdraw ever create rows.
+
+**Match history & audit — `/api/v1/history` (JWT required, read-only):**
+
+| Method | Route | Body | Behavior |
+|---|---|---|---|
+| `GET` | `/matches?page=&size=` | — | Every session the caller was ever seated in, newest first: `{sessionId, roomCode, gameVariant, stakeAmount, status, winnerUsername, myFinalScore, startedAt, endedAt}`. |
+| `GET` | `/matches/{sessionId}` | — | Full detail incl. every seated player's `{username, seatNumber, finalScore, status}`. `403` if the caller wasn't a participant, `404` if the session doesn't exist. |
+| `GET` | `/matches/{sessionId}/moves?page=&size=` | — | The `GameMoveLog` trail for that session, in play order. Same `403`/`404` rules as above. |
+| `GET` | `/scorecard` | — | Aggregate `{totalMatches, wins, losses, netChips, bestDealScore}` across completed matches. **`netChips` is a heuristic** (winner-takes-the-table projection from `stakeAmount`), not a read of the wallet ledger — see the wallet note above. |

@@ -39,6 +39,7 @@ class _GameTestScreenState extends State<GameTestScreen> {
   String? _errorMessage;
   String? _lastEventType;
   List<RoomPlayerSummary> _seatedPlayers = [];
+  bool _isReady = false;
 
   @override
   void initState() {
@@ -124,6 +125,61 @@ class _GameTestScreenState extends State<GameTestScreen> {
           roomCode: _roomCodeController.text.trim(),
         );
         setState(() => _seatedPlayers = room.players);
+      });
+
+  /// Polls the current room's lobby state via REST (no WebSocket needed).
+  Future<void> _getRoom() => _run(() async {
+        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
+          throw Exception('Quick-register and enter a room code first');
+        }
+        final room = await _roomApi.getRoom(
+          jwt: _tokenController.text.trim(),
+          roomCode: _roomCodeController.text.trim(),
+        );
+        setState(() => _seatedPlayers = room.players);
+      });
+
+  /// Un-seats the caller. If the caller is the host, the whole room is disbanded.
+  Future<void> _leaveRoom() => _run(() async {
+        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
+          throw Exception('Quick-register and enter a room code first');
+        }
+        await _roomApi.leaveRoom(
+          jwt: _tokenController.text.trim(),
+          roomCode: _roomCodeController.text.trim(),
+        );
+        setState(() {
+          _seatedPlayers = [];
+          _isReady = false;
+        });
+      });
+
+  /// Host-only: closes a still-waiting room.
+  Future<void> _cancelRoom() => _run(() async {
+        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
+          throw Exception('Quick-register and enter a room code first');
+        }
+        await _roomApi.cancelRoom(
+          jwt: _tokenController.text.trim(),
+          roomCode: _roomCodeController.text.trim(),
+        );
+        setState(() => _seatedPlayers = []);
+      });
+
+  /// Toggles the caller's ready flag. Purely informational — START_MATCH doesn't require it.
+  Future<void> _toggleReady() => _run(() async {
+        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
+          throw Exception('Quick-register and enter a room code first');
+        }
+        final room = await _roomApi.setReady(
+          jwt: _tokenController.text.trim(),
+          roomCode: _roomCodeController.text.trim(),
+          ready: !_isReady,
+        );
+        setState(() {
+          _isReady = !_isReady;
+          _seatedPlayers = room.players;
+        });
       });
 
   Future<void> _connect() => _run(() async {
@@ -333,13 +389,55 @@ class _GameTestScreenState extends State<GameTestScreen> {
               runSpacing: 6,
               children: _seatedPlayers
                   .map((p) => Chip(
-                        label: Text('#${p.seatNumber} ${p.username}', style: const TextStyle(fontSize: 11)),
+                        label: Text(
+                          '#${p.seatNumber} ${p.username}${p.status != null ? " (${p.status})" : ""}',
+                          style: const TextStyle(fontSize: 11),
+                        ),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ))
                   .toList(),
             ),
           ],
+          const SizedBox(height: 8),
+          Text('Lobby (REST, no socket needed)', style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: (_busy || _connected) ? null : () => _getRoom(),
+                  child: const Text('Get Room'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: (_busy || _connected) ? null : () => _toggleReady(),
+                  child: Text(_isReady ? 'Un-ready' : 'Set Ready'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: (_busy || _connected) ? null : () => _leaveRoom(),
+                  child: const Text('Leave Room'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: (_busy || _connected) ? null : () => _cancelRoom(),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
+                  child: const Text('Cancel Room (host)'),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           Row(
             children: [

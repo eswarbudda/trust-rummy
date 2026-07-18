@@ -2,6 +2,7 @@ package com.trustrummy.backend.service;
 
 import com.trustrummy.backend.entity.GameRoom;
 import com.trustrummy.backend.entity.MoveType;
+import com.trustrummy.backend.entity.PlayerStatus;
 import com.trustrummy.backend.entity.RoomPlayer;
 import com.trustrummy.backend.game.config.GameConfig;
 import com.trustrummy.backend.game.engine.DeckFactory;
@@ -140,7 +141,7 @@ public class RummyEngineService {
             return;
         }
 
-        List<RoomPlayer> seated = new ArrayList<>(roomPlayerRepository.findByGameRoomId(room.getId()));
+        List<RoomPlayer> seated = new ArrayList<>(roomPlayerRepository.findByGameRoomIdAndStatusNot(room.getId(), PlayerStatus.LEFT));
         seated.sort(Comparator.comparing(rp -> rp.getSeatNumber() == null ? Integer.MAX_VALUE : rp.getSeatNumber()));
         if (seated.size() < 2) {
             sendError(match.getRoomCode(), requesterUserId, "Need at least 2 seated players to start");

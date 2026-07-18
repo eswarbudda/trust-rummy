@@ -1,6 +1,7 @@
 package com.trustrummy.backend.controller;
 
 import com.trustrummy.backend.dto.RoomCreateRequest;
+import com.trustrummy.backend.dto.RoomReadyRequest;
 import com.trustrummy.backend.dto.RoomResponse;
 import com.trustrummy.backend.entity.GameRoom;
 import com.trustrummy.backend.entity.RoomPlayer;
@@ -39,6 +40,14 @@ public class RoomController {
         return ResponseEntity.ok(rooms);
     }
 
+    /** Room detail incl. seated players — lets a client poll/refresh lobby state without going through the WebSocket. */
+    @GetMapping("/{roomCode}")
+    public ResponseEntity<RoomResponse> getRoom(@PathVariable String roomCode) {
+        GameRoom room = roomService.getRoomByCode(roomCode);
+        List<RoomPlayer> seated = roomService.getSeatedPlayers(room.getId());
+        return ResponseEntity.ok(RoomResponse.from(room, seated));
+    }
+
     /**
      * Seats the authenticated user into an existing room. Required before
      * that user's WebSocket connection to {@code /ws/game/{roomCode}} counts
@@ -50,6 +59,38 @@ public class RoomController {
             @PathVariable String roomCode
     ) {
         GameRoom room = roomService.joinRoom(principal.getUsername(), roomCode);
+        List<RoomPlayer> seated = roomService.getSeatedPlayers(room.getId());
+        return ResponseEntity.ok(RoomResponse.from(room, seated));
+    }
+
+    /** Un-seats the caller from a room that hasn't started yet. If the host leaves, the room is disbanded. */
+    @PostMapping("/{roomCode}/leave")
+    public ResponseEntity<Void> leaveRoom(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable String roomCode
+    ) {
+        roomService.leaveRoom(principal.getUsername(), roomCode);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Host-only: closes a still-waiting room. */
+    @DeleteMapping("/{roomCode}")
+    public ResponseEntity<Void> cancelRoom(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable String roomCode
+    ) {
+        roomService.cancelRoom(principal.getUsername(), roomCode);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Toggles the caller's ready flag in the lobby. */
+    @PutMapping("/{roomCode}/ready")
+    public ResponseEntity<RoomResponse> setReady(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable String roomCode,
+            @RequestBody RoomReadyRequest request
+    ) {
+        GameRoom room = roomService.setReady(principal.getUsername(), roomCode, request.isReady());
         List<RoomPlayer> seated = roomService.getSeatedPlayers(room.getId());
         return ResponseEntity.ok(RoomResponse.from(room, seated));
     }

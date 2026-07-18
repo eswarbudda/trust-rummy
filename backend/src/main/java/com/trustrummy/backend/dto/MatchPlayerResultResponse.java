@@ -9,9 +9,10 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class RoomPlayerSummary {
+public class MatchPlayerResultResponse {
     private Long userId;
     private String username;
     private Integer seatNumber;
+    private Integer finalScore;
     private String status;
 }

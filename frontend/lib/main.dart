@@ -11,7 +11,7 @@ class TrustRummyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final seedColor = const Color(0xFF6C5CE7);
+    const seedColor = Color(0xFF6C5CE7);
 
     return MaterialApp(
       title: 'Trust Rummy',

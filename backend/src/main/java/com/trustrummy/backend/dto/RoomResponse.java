@@ -43,6 +43,7 @@ public class RoomResponse {
                                 .userId(rp.getUser().getId())
                                 .username(rp.getUser().getUsername())
                                 .seatNumber(rp.getSeatNumber())
+                                .status(rp.getStatus().name())
                                 .build())
                         .toList())
                 .build();
