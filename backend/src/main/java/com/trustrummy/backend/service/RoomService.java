@@ -161,6 +161,16 @@ public class RoomService {
         }
     }
 
+    /**
+     * System-triggered cancellation for a lobby room that's sat in
+     * {@code WAITING} too long with nobody around to start or cancel it —
+     * called only by the scheduled {@code RoomLifecycleService} reaper.
+     * Shares the exact same disband path as a host-initiated cancel.
+     */
+    public void autoCancelStaleRoom(GameRoom room) {
+        disbandRoom(room);
+    }
+
     /** Host-only: closes a waiting room before it starts. */
     public void cancelRoom(String username, String roomCode) {
         User user = userRepository.findByUsername(username)
@@ -217,7 +227,10 @@ public class RoomService {
         });
 
         gameStateService.remove(room.getRoomCode());
+        // Notify any still-connected sockets before wiping the session
+        // registry itself, otherwise they'd never see the CANCELLED status.
         broadcastRoomState(room);
+        broadcastService.clearRoom(room.getRoomCode());
     }
 
     /** Lets any already-connected sockets in the room see the new seat/status without reconnecting. */

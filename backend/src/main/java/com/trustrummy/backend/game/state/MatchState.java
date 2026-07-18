@@ -6,6 +6,7 @@ import com.trustrummy.backend.game.model.MatchStatus;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +47,9 @@ public class MatchState {
     private volatile Deal currentDeal;
     private volatile Long matchWinnerId;
     private volatile Instant lastUpdatedAt = Instant.now();
+
+    /** Per-player stake collected from {@code GameRoom.stakeAmount} at {@code START_MATCH} time; zero for free-play rooms. */
+    private volatile BigDecimal stakeAmount = BigDecimal.ZERO;
 
     public MatchState(String roomCode) {
         this.roomCode = roomCode;

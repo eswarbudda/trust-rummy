@@ -35,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -66,6 +67,7 @@ public class RummyEngineService {
     private final TurnManager turnManager;
     private final GameBroadcastService broadcastService;
     private final GamePersistenceService persistenceService;
+    private final WalletService walletService;
 
     private final Map<String, AtomicLong> sequenceCounters = new ConcurrentHashMap<>();
 
@@ -148,6 +150,10 @@ public class RummyEngineService {
             return;
         }
 
+        if (!collectStakes(room, match, seated, requesterUserId)) {
+            return; // rejection/refund already reported to the room; match state untouched
+        }
+
         GameConfig config = GameConfig.builder()
                 .maxPlayers(room.getMaxPlayers())
                 .gameVariant(room.getGameVariant() != null ? room.getGameVariant() : GameVariant.POOL_101)
@@ -172,6 +178,74 @@ public class RummyEngineService {
 
         persistenceService.recordMatchStart(match.getRoomCode());
         startNewDeal(match);
+    }
+
+    /**
+     * Debits every seated player's wallet by {@code GameRoom.stakeAmount}
+     * before the match actually starts, turning the previously
+     * display-only stake into a real economic commitment. All-or-nothing:
+     * balances are pre-checked for every seat first so a mid-collection
+     * failure is rare, but if one still happens (e.g. a concurrent
+     * withdrawal drained a balance between the check and the debit) every
+     * player already charged this call is refunded and the match does not
+     * start. No-op for free-play rooms ({@code stakeAmount <= 0}).
+     */
+    private boolean collectStakes(GameRoom room, MatchState match, List<RoomPlayer> seated, Long requesterUserId) {
+        BigDecimal stake = room.getStakeAmount() != null ? room.getStakeAmount() : BigDecimal.ZERO;
+        match.setStakeAmount(stake);
+        if (stake.compareTo(BigDecimal.ZERO) <= 0) {
+            return true;
+        }
+
+        for (RoomPlayer rp : seated) {
+            if (!walletService.hasSufficientBalance(rp.getUser().getId(), stake)) {
+                sendError(match.getRoomCode(), requesterUserId, "Cannot start: " + rp.getUser().getUsername()
+                        + " does not have enough wallet balance for the " + stake + " stake");
+                return false;
+            }
+        }
+
+        List<RoomPlayer> debited = new ArrayList<>();
+        try {
+            for (RoomPlayer rp : seated) {
+                walletService.debitStake(rp.getUser().getId(), stake, match.getRoomCode());
+                debited.add(rp);
+            }
+            return true;
+        } catch (Exception ex) {
+            log.error("Stake collection failed for room={} after debiting {}/{} players; refunding",
+                    match.getRoomCode(), debited.size(), seated.size(), ex);
+            for (RoomPlayer rp : debited) {
+                try {
+                    walletService.creditStakePayout(rp.getUser().getId(), stake, match.getRoomCode());
+                } catch (Exception refundEx) {
+                    log.error("Stake refund failed for user={} room={} — manual reconciliation required",
+                            rp.getUser().getId(), match.getRoomCode(), refundEx);
+                }
+            }
+            sendError(match.getRoomCode(), requesterUserId, "Cannot start: a stake could not be collected, please try again");
+            return false;
+        }
+    }
+
+    /** Pays the whole pot (stake x seated player count) to the match winner. No-op for free-play rooms or a no-winner match. */
+    private void settleStakes(MatchState match, Long matchWinnerId) {
+        BigDecimal stake = match.getStakeAmount();
+        if (stake == null || stake.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        if (matchWinnerId == null) {
+            log.warn("Match in room={} ended with stakes collected but no winner to pay out; pot is not refunded", match.getRoomCode());
+            return;
+        }
+        BigDecimal pot = stake.multiply(BigDecimal.valueOf(match.getSeatOrder().size()));
+        try {
+            walletService.creditStakePayout(matchWinnerId, pot, match.getRoomCode());
+            log.info("Stake payout: room={} winner={} pot={}", match.getRoomCode(), matchWinnerId, pot);
+        } catch (Exception ex) {
+            log.error("Stake payout failed for room={} winner={} pot={} — manual reconciliation required",
+                    match.getRoomCode(), matchWinnerId, pot, ex);
+        }
     }
 
     private void startNewDeal(MatchState match) {
@@ -271,6 +345,8 @@ public class RummyEngineService {
         if (matchWinnerId != null && match.getScorecards().containsKey(matchWinnerId)) {
             match.getScorecards().get(matchWinnerId).setMatchStatus(MatchPlayerStatus.WINNER);
         }
+
+        settleStakes(match, matchWinnerId);
 
         Map<Long, Integer> finalScores = new LinkedHashMap<>();
         match.getScorecards().forEach((id, sc) -> finalScores.put(id, sc.getCumulativeScore()));
@@ -402,6 +478,81 @@ public class RummyEngineService {
         deal.advanceTurn();
         broadcastDealState(match, deal, EventType.TURN_STATE);
         scheduleTimeoutFor(match);
+    }
+
+    // ------------------------------------------------------------------
+    // Disconnect forfeiture (RoomLifecycleService reaper hook)
+    // ------------------------------------------------------------------
+
+    /**
+     * Forces a seated player out of the current deal because their
+     * WebSocket has been gone longer than the reconnect grace period —
+     * called only by the scheduled {@code RoomLifecycleService} reaper,
+     * never directly from a client message. Unlike a normal {@code DROP}
+     * (which the player can only invoke on their own turn, before
+     * drawing), this can happen at any point in the deal: a disconnect
+     * doesn't wait for a convenient moment. Reuses the same penalty/
+     * hand-return/turn-advance mechanics as {@link #handleDrop} so a
+     * forfeited seat behaves identically to a voluntary drop for scoring
+     * and match-progression purposes.
+     */
+    public void forfeitDisconnectedPlayer(String roomCode, Long userId) {
+        MatchState match = gameStateService.get(roomCode);
+        if (match == null) {
+            return;
+        }
+        match.getLock().lock();
+        try {
+            if (match.getStatus() != MatchStatus.IN_PROGRESS) {
+                return;
+            }
+            Deal deal = match.getCurrentDeal();
+            if (deal == null || deal.getStatus() != DealStatus.IN_PROGRESS) {
+                return;
+            }
+            if (deal.getRoundStatus().get(userId) != RoundStatus.PLAYING) {
+                return; // already dropped/declared/not part of this deal — nothing to forfeit
+            }
+
+            boolean wasCurrentTurn = userId.equals(deal.currentTurnUserId());
+            boolean isFirstTurn = !deal.getHasCompletedFirstTurn().getOrDefault(userId, false);
+            int penalty = isFirstTurn
+                    ? scoreCalculator.firstDropPoints(match.getConfig())
+                    : scoreCalculator.middleDropPoints(match.getConfig());
+
+            deal.getRoundStatus().put(userId, RoundStatus.DROPPED);
+            PlayerScorecard scorecard = match.getScorecards().get(userId);
+            if (scorecard != null) {
+                scorecard.addPoints(penalty);
+            }
+
+            List<Card> hand = deal.getHands().remove(userId);
+            if (hand != null && !hand.isEmpty()) {
+                deal.returnCardsToClosedDeckShuffled(hand);
+            }
+
+            persistenceService.recordMove(roomCode, userId, MoveType.DROP,
+                    "{\"penalty\":" + penalty + ",\"reason\":\"disconnect_timeout\"}", nextSequence(roomCode));
+
+            log.info("Forfeiting disconnected player {} in room {} (penalty={}, wasCurrentTurn={})",
+                    userId, roomCode, penalty, wasCurrentTurn);
+
+            broadcastDealState(match, deal, EventType.PLAYER_DROPPED);
+
+            if (deal.activePlayerCount() <= 1) {
+                List<Long> remaining = deal.activePlayerIds();
+                endDeal(match, deal, remaining.isEmpty() ? null : remaining.get(0), false);
+                return;
+            }
+
+            if (wasCurrentTurn) {
+                deal.advanceTurn();
+                broadcastDealState(match, deal, EventType.TURN_STATE);
+                scheduleTimeoutFor(match);
+            }
+        } finally {
+            match.getLock().unlock();
+        }
     }
 
     // ------------------------------------------------------------------

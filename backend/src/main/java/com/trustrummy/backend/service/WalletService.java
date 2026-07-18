@@ -31,7 +31,7 @@ public class WalletService {
         User user = getUser(username);
         user.setWalletBalance(user.getWalletBalance().add(amount));
         userRepository.save(user);
-        return recordTransaction(user, WalletTransactionType.DEPOSIT, amount);
+        return recordTransaction(user, WalletTransactionType.DEPOSIT, amount, null);
     }
 
     @Transactional
@@ -43,7 +43,7 @@ public class WalletService {
         }
         user.setWalletBalance(user.getWalletBalance().subtract(amount));
         userRepository.save(user);
-        return recordTransaction(user, WalletTransactionType.WITHDRAWAL, amount.negate());
+        return recordTransaction(user, WalletTransactionType.WITHDRAWAL, amount.negate(), null);
     }
 
     public Page<WalletTransaction> getTransactions(String username, Pageable pageable) {
@@ -51,12 +51,49 @@ public class WalletService {
         return walletTransactionRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
     }
 
-    private WalletTransaction recordTransaction(User user, WalletTransactionType type, BigDecimal signedAmount) {
+    /** Read-only pre-check so {@code RummyEngineService} can reject START_MATCH before debiting anyone. */
+    public boolean hasSufficientBalance(Long userId, BigDecimal amount) {
+        return userRepository.findById(userId)
+                .map(user -> user.getWalletBalance().compareTo(amount) >= 0)
+                .orElse(false);
+    }
+
+    /** Debits a seated player's stake at match start. Ledgered as {@code STAKE_DEBIT}, tagged with the room code. */
+    @Transactional
+    public WalletTransaction debitStake(Long userId, BigDecimal amount, String roomCode) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown user id: " + userId));
+        if (user.getWalletBalance().compareTo(amount) < 0) {
+            throw new IllegalStateException("Insufficient wallet balance for user " + userId);
+        }
+        user.setWalletBalance(user.getWalletBalance().subtract(amount));
+        userRepository.save(user);
+        return recordTransaction(user, WalletTransactionType.STAKE_DEBIT, amount.negate(), roomCode);
+    }
+
+    /** Credits the match winner's pot at match end. Ledgered as {@code STAKE_PAYOUT}, tagged with the room code. */
+    @Transactional
+    public WalletTransaction creditStakePayout(Long userId, BigDecimal amount, String roomCode) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown user id: " + userId));
+        user.setWalletBalance(user.getWalletBalance().add(amount));
+        userRepository.save(user);
+        return recordTransaction(user, WalletTransactionType.STAKE_PAYOUT, amount, roomCode);
+    }
+
+    private WalletTransaction recordTransaction(User user, WalletTransactionType type, BigDecimal signedAmount, String referenceRoomCode) {
         WalletTransaction tx = WalletTransaction.builder()
                 .user(user)
                 .type(type)
                 .amount(signedAmount)
                 .balanceAfter(user.getWalletBalance())
+                .referenceRoomCode(referenceRoomCode)
                 .build();
         return walletTransactionRepository.save(tx);
     }
