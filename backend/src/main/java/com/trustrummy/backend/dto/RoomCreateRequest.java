@@ -1,5 +1,6 @@
 package com.trustrummy.backend.dto;
 
+import com.trustrummy.backend.game.model.GameVariant;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -21,4 +22,7 @@ public class RoomCreateRequest {
 
     @NotNull
     private BigDecimal stakeAmount;
+
+    /** Defaults to POOL_101 if omitted. */
+    private GameVariant gameVariant;
 }

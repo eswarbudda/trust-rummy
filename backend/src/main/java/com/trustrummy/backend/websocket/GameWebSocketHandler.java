@@ -1,58 +1,100 @@
 package com.trustrummy.backend.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.trustrummy.backend.gamestate.LiveGameState;
-import com.trustrummy.backend.service.GameStateService;
+import com.trustrummy.backend.entity.User;
+import com.trustrummy.backend.game.ws.EventType;
+import com.trustrummy.backend.game.ws.GameActionMessage;
+import com.trustrummy.backend.game.ws.GameBroadcastService;
+import com.trustrummy.backend.game.ws.GameEvent;
+import com.trustrummy.backend.repository.UserRepository;
+import com.trustrummy.backend.service.RummyEngineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import java.util.Map;
+import java.util.Optional;
 
 /**
- * Stub for the real-time gameplay channel. Full move validation / turn
- * engine lands in a later phase; for now this wires the socket to the
- * in-memory {@link GameStateService} so room state lookups never hit the
- * database on the hot path.
+ * Real-time gameplay channel ({@code /ws/game/{roomCode}}). Thin transport
+ * layer only — all game rules live in {@link RummyEngineService}; this
+ * class just:
+ * <ol>
+ *   <li>resolves the JWT-authenticated username (set by
+ *       {@code JwtHandshakeInterceptor}) to a numeric userId,</li>
+ *   <li>registers/unregisters the session with {@link GameBroadcastService}
+ *       so the engine can broadcast to every player in the room (including
+ *       from timer-driven auto-play, with no inbound message involved),</li>
+ *   <li>deserializes inbound JSON into a {@link GameActionMessage} and
+ *       hands it to the engine.</li>
+ * </ol>
  */
 @Slf4j
+@Component
 @RequiredArgsConstructor
 public class GameWebSocketHandler extends TextWebSocketHandler {
 
     private static final String ROOM_CODE_ATTR = "roomCode";
+    private static final String USER_ID_ATTR = "userId";
 
-    private final GameStateService gameStateService;
+    private final RummyEngineService rummyEngineService;
+    private final GameBroadcastService broadcastService;
+    private final UserRepository userRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         String roomCode = extractRoomCode(session);
-        String username = (String) session.getAttributes().getOrDefault("username", "anonymous");
+        String username = (String) session.getAttributes().getOrDefault("username", null);
 
-        LiveGameState state = gameStateService.getOrCreate(roomCode);
-        log.info("Game socket connected: user={} room={} activeRooms={}",
-                username, roomCode, gameStateService.activeRoomCount());
+        Optional<User> user = username != null ? userRepository.findByUsername(username) : Optional.empty();
+        if (user.isEmpty()) {
+            log.warn("Game socket rejected: unknown user for room={}", roomCode);
+            closeQuietly(session, CloseStatus.NOT_ACCEPTABLE);
+            return;
+        }
 
-        sendJson(session, Map.of(
-                "type", "ROOM_STATE",
-                "roomCode", roomCode,
-                "status", state.getStatus(),
-                "currentTurnUserId", String.valueOf(state.currentTurnUserId())
-        ));
+        Long userId = user.get().getId();
+        session.getAttributes().put(USER_ID_ATTR, userId);
+        session.getAttributes().put(ROOM_CODE_ATTR, roomCode);
+
+        broadcastService.register(roomCode, userId, session);
+        log.info("Game socket connected: user={} room={}", username, roomCode);
+
+        broadcastService.sendTo(roomCode, userId, rummyEngineService.buildSnapshotEventFor(roomCode, userId));
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-        // Move parsing / validation / broadcast is implemented in a later phase.
-        log.debug("Game message received (unhandled in phase 1): {}", message.getPayload());
+        String roomCode = (String) session.getAttributes().get(ROOM_CODE_ATTR);
+        Long userId = (Long) session.getAttributes().get(USER_ID_ATTR);
+        if (roomCode == null || userId == null) {
+            return;
+        }
+
+        try {
+            GameActionMessage action = objectMapper.readValue(message.getPayload(), GameActionMessage.class);
+            if (action.getType() == null) {
+                broadcastService.sendTo(roomCode, userId, GameEvent.of(EventType.ERROR).with("message", "Missing action type"));
+                return;
+            }
+            rummyEngineService.handleAction(roomCode, userId, action);
+        } catch (Exception ex) {
+            log.warn("Malformed game action from user={}: {}", userId, message.getPayload(), ex);
+            broadcastService.sendTo(roomCode, userId, GameEvent.of(EventType.ERROR).with("message", "Malformed action payload"));
+        }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        String roomCode = extractRoomCode(session);
+        String roomCode = (String) session.getAttributes().get(ROOM_CODE_ATTR);
+        Long userId = (Long) session.getAttributes().get(USER_ID_ATTR);
+        if (roomCode != null && userId != null) {
+            broadcastService.unregister(roomCode, userId);
+        }
         log.info("Game socket closed: room={} status={}", roomCode, status);
     }
 
@@ -62,17 +104,20 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             return attr.toString();
         }
         String uri = String.valueOf(session.getUri());
-        String[] parts = uri.split("/");
+        String[] parts = uri.split("[/?]");
+        for (int i = 0; i < parts.length; i++) {
+            if ("game".equals(parts[i]) && i + 1 < parts.length) {
+                return parts[i + 1];
+            }
+        }
         return parts[parts.length - 1];
     }
 
-    private void sendJson(WebSocketSession session, Object payload) {
+    private void closeQuietly(WebSocketSession session, CloseStatus status) {
         try {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
-            }
+            session.close(status);
         } catch (Exception ex) {
-            log.error("Failed to send game state message", ex);
+            log.debug("Failed to close rejected game socket", ex);
         }
     }
 }

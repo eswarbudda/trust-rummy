@@ -5,6 +5,7 @@ import com.trustrummy.backend.entity.GameRoom;
 import com.trustrummy.backend.entity.RoomPlayer;
 import com.trustrummy.backend.entity.RoomStatus;
 import com.trustrummy.backend.entity.User;
+import com.trustrummy.backend.game.model.GameVariant;
 import com.trustrummy.backend.repository.GameRoomRepository;
 import com.trustrummy.backend.repository.RoomPlayerRepository;
 import com.trustrummy.backend.repository.UserRepository;
@@ -35,6 +36,7 @@ public class RoomService {
                 .name(request.getName())
                 .maxPlayers(request.getMaxPlayers())
                 .stakeAmount(request.getStakeAmount())
+                .gameVariant(request.getGameVariant() != null ? request.getGameVariant() : GameVariant.POOL_101)
                 .status(RoomStatus.WAITING)
                 .createdBy(creator)
                 .build();

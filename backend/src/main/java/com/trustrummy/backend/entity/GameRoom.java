@@ -1,5 +1,6 @@
 package com.trustrummy.backend.entity;
 
+import com.trustrummy.backend.game.model.GameVariant;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -38,6 +39,11 @@ public class GameRoom {
     @Column(name = "stake_amount", precision = 19, scale = 2)
     @Builder.Default
     private BigDecimal stakeAmount = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "game_variant", length = 16)
+    @Builder.Default
+    private GameVariant gameVariant = GameVariant.POOL_101;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)

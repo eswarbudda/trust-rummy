@@ -19,6 +19,7 @@ public class RoomResponse {
     private Integer maxPlayers;
     private BigDecimal stakeAmount;
     private String status;
+    private String gameVariant;
 
     public static RoomResponse from(GameRoom room) {
         return RoomResponse.builder()
@@ -28,6 +29,7 @@ public class RoomResponse {
                 .maxPlayers(room.getMaxPlayers())
                 .stakeAmount(room.getStakeAmount())
                 .status(room.getStatus().name())
+                .gameVariant(room.getGameVariant() != null ? room.getGameVariant().name() : null)
                 .build();
     }
 }

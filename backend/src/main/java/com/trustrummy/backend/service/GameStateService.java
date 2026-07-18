@@ -1,35 +1,36 @@
 package com.trustrummy.backend.service;
 
-import com.trustrummy.backend.gamestate.LiveGameState;
+import com.trustrummy.backend.game.state.MatchState;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Central, thread-safe registry of every currently-live game room.
+ * Central, thread-safe registry of every currently-live room match.
  * <p>
  * The live gameplay loop (turn changes, draws, discards, declares) reads
  * and writes exclusively through this in-memory {@link ConcurrentHashMap},
  * completely bypassing the database on the hot path. Durable persistence
- * (audit log, final results) happens asynchronously via the JPA
- * repositories once a session ends or on periodic checkpoints.
+ * (audit log, final results) happens asynchronously via
+ * {@link GamePersistenceService} once a match ends or on periodic
+ * checkpoints.
  */
 @Service
 public class GameStateService {
 
-    private final ConcurrentHashMap<String, LiveGameState> roomStates = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, MatchState> roomStates = new ConcurrentHashMap<>();
 
     /**
-     * Atomically fetches the live state for a room, creating one if it does
+     * Atomically fetches the live match for a room, creating one if it does
      * not yet exist. Safe to call concurrently from multiple WebSocket
      * sessions handshaking into the same room.
      */
-    public LiveGameState getOrCreate(String roomCode) {
-        return roomStates.computeIfAbsent(roomCode, LiveGameState::new);
+    public MatchState getOrCreate(String roomCode) {
+        return roomStates.computeIfAbsent(roomCode, MatchState::new);
     }
 
-    public LiveGameState get(String roomCode) {
+    public MatchState get(String roomCode) {
         return roomStates.get(roomCode);
     }
 
@@ -41,7 +42,7 @@ public class GameStateService {
         roomStates.remove(roomCode);
     }
 
-    public Collection<LiveGameState> activeRooms() {
+    public Collection<MatchState> activeRooms() {
         return roomStates.values();
     }
 

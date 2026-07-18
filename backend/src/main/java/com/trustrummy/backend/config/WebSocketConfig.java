@@ -2,7 +2,6 @@ package com.trustrummy.backend.config;
 
 import com.trustrummy.backend.security.JwtHandshakeInterceptor;
 import com.trustrummy.backend.security.JwtTokenUtil;
-import com.trustrummy.backend.service.GameStateService;
 import com.trustrummy.backend.websocket.GameWebSocketHandler;
 import com.trustrummy.backend.websocket.TelemetryWebSocketHandler;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +32,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private static final int MAX_SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
     private final JwtTokenUtil jwtTokenUtil;
-    private final GameStateService gameStateService;
+    private final GameWebSocketHandler gameWebSocketHandler;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
@@ -43,7 +42,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         applyDevCors(telemetryRegistration);
 
         WebSocketHandlerRegistration gameRegistration = registry
-                .addHandler(gameWebSocketHandler(), "/ws/game/{roomCode}")
+                .addHandler(gameWebSocketHandler, "/ws/game/{roomCode}")
                 .addInterceptors(jwtHandshakeInterceptor());
         applyDevCors(gameRegistration);
     }
@@ -59,11 +58,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Bean
     public WebSocketHandler telemetryWebSocketHandler() {
         return new TelemetryWebSocketHandler();
-    }
-
-    @Bean
-    public WebSocketHandler gameWebSocketHandler() {
-        return new GameWebSocketHandler(gameStateService);
     }
 
     @Bean
