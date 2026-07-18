@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/telemetry_screen.dart';
+import 'screens/home_screen.dart';
 
 void main() {
   runApp(const TrustRummyApp());
@@ -30,7 +30,7 @@ class TrustRummyApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: const TelemetryScreen(),
+      home: const HomeScreen(),
     );
   }
 }

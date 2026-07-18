@@ -24,4 +24,10 @@ class ApiConfig {
   static Uri get registerUri => Uri.parse('$httpBaseUrl/api/auth/register');
 
   static Uri get loginUri => Uri.parse('$httpBaseUrl/api/auth/login');
+
+  static Uri get roomsUri => Uri.parse('$httpBaseUrl/api/v1/rooms');
+
+  /// Gameplay WebSocket for a specific room, per `RULES_ENGINE.md` section 9.
+  static Uri gameWsUri(String roomCode, String token) =>
+      Uri.parse('$wsBaseUrl/ws/game/$roomCode?token=$token');
 }
