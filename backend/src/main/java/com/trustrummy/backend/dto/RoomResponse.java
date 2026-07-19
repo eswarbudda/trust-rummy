@@ -21,6 +21,7 @@ public class RoomResponse {
     private Integer maxPlayers;
     private BigDecimal stakeAmount;
     private String status;
+    private String gameType;
     private String gameVariant;
     /** Only populated by endpoints that already have the seated players loaded (create/join). */
     private List<RoomPlayerSummary> players;
@@ -37,6 +38,7 @@ public class RoomResponse {
                 .maxPlayers(room.getMaxPlayers())
                 .stakeAmount(room.getStakeAmount())
                 .status(room.getStatus().name())
+                .gameType(room.getGameType() != null ? room.getGameType().name() : null)
                 .gameVariant(room.getGameVariant() != null ? room.getGameVariant().name() : null)
                 .players(seatedPlayers == null ? null : seatedPlayers.stream()
                         .map(rp -> RoomPlayerSummary.builder()

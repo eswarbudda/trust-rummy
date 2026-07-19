@@ -8,6 +8,7 @@ import com.trustrummy.backend.entity.RoomStatus;
 import com.trustrummy.backend.entity.User;
 import com.trustrummy.backend.exception.ForbiddenOperationException;
 import com.trustrummy.backend.exception.ResourceNotFoundException;
+import com.trustrummy.backend.game.model.GameType;
 import com.trustrummy.backend.game.model.GameVariant;
 import com.trustrummy.backend.game.ws.EventType;
 import com.trustrummy.backend.game.ws.GameBroadcastService;
@@ -49,6 +50,7 @@ public class RoomService {
                 .name(request.getName())
                 .maxPlayers(request.getMaxPlayers())
                 .stakeAmount(request.getStakeAmount())
+                .gameType(request.getGameType() != null ? request.getGameType() : GameType.RUMMY)
                 .gameVariant(request.getGameVariant() != null ? request.getGameVariant() : GameVariant.POOL_101)
                 .status(RoomStatus.WAITING)
                 .createdBy(creator)

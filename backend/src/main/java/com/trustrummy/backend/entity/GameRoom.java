@@ -1,5 +1,6 @@
 package com.trustrummy.backend.entity;
 
+import com.trustrummy.backend.game.model.GameType;
 import com.trustrummy.backend.game.model.GameVariant;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -39,6 +40,12 @@ public class GameRoom {
     @Column(name = "stake_amount", precision = 19, scale = 2)
     @Builder.Default
     private BigDecimal stakeAmount = BigDecimal.ZERO;
+
+    /** Which game this room plays; {@code gameVariant} below is a RUMMY-specific sub-selector. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "game_type", length = 16)
+    @Builder.Default
+    private GameType gameType = GameType.RUMMY;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "game_variant", length = 16)

@@ -43,7 +43,7 @@ public class RoomLifecycleService {
     private final RoomService roomService;
     private final GameStateService gameStateService;
     private final GameBroadcastService broadcastService;
-    private final RummyEngineService rummyEngineService;
+    private final GameEngineRegistry gameEngineRegistry;
 
     @Value("${rummy.lifecycle.stale-waiting-room-minutes:30}")
     private long staleWaitingRoomMinutes;
@@ -99,7 +99,7 @@ public class RoomLifecycleService {
                 if (disconnectedAt != null && disconnectedAt.isBefore(cutoff)) {
                     log.info("Forfeiting disconnected player {} in room {} (disconnected since {})",
                             userId, match.getRoomCode(), disconnectedAt);
-                    rummyEngineService.forfeitDisconnectedPlayer(match.getRoomCode(), userId);
+                    gameEngineRegistry.resolveForRoom(match.getRoomCode()).forfeitDisconnectedPlayer(match.getRoomCode(), userId);
                 }
             }
         }

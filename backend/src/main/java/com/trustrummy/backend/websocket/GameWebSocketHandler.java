@@ -2,12 +2,13 @@ package com.trustrummy.backend.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trustrummy.backend.entity.User;
+import com.trustrummy.backend.game.engine.GameEngine;
 import com.trustrummy.backend.game.ws.EventType;
 import com.trustrummy.backend.game.ws.GameActionMessage;
 import com.trustrummy.backend.game.ws.GameBroadcastService;
 import com.trustrummy.backend.game.ws.GameEvent;
 import com.trustrummy.backend.repository.UserRepository;
-import com.trustrummy.backend.service.RummyEngineService;
+import com.trustrummy.backend.service.GameEngineRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -20,8 +21,8 @@ import java.util.Optional;
 
 /**
  * Real-time gameplay channel ({@code /ws/game/{roomCode}}). Thin transport
- * layer only — all game rules live in {@link RummyEngineService}; this
- * class just:
+ * layer only — all game rules live in the room's resolved {@link GameEngine}
+ * (see {@link GameEngineRegistry}); this class just:
  * <ol>
  *   <li>resolves the JWT-authenticated username (set by
  *       {@code JwtHandshakeInterceptor}) to a numeric userId,</li>
@@ -29,7 +30,7 @@ import java.util.Optional;
  *       so the engine can broadcast to every player in the room (including
  *       from timer-driven auto-play, with no inbound message involved),</li>
  *   <li>deserializes inbound JSON into a {@link GameActionMessage} and
- *       hands it to the engine.</li>
+ *       hands it to the room's engine.</li>
  * </ol>
  */
 @Slf4j
@@ -40,7 +41,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private static final String ROOM_CODE_ATTR = "roomCode";
     private static final String USER_ID_ATTR = "userId";
 
-    private final RummyEngineService rummyEngineService;
+    private final GameEngineRegistry gameEngineRegistry;
     private final GameBroadcastService broadcastService;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -64,7 +65,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         broadcastService.register(roomCode, userId, session);
         log.info("Game socket connected: user={} room={}", username, roomCode);
 
-        broadcastService.sendTo(roomCode, userId, rummyEngineService.buildSnapshotEventFor(roomCode, userId));
+        GameEngine engine = gameEngineRegistry.resolveForRoom(roomCode);
+        broadcastService.sendTo(roomCode, userId, engine.buildSnapshotEventFor(roomCode, userId));
     }
 
     @Override
@@ -90,7 +92,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 broadcastService.sendTo(roomCode, userId, GameEvent.of(EventType.ERROR).with("message", "Missing action type"));
                 return;
             }
-            rummyEngineService.handleAction(roomCode, userId, action);
+            gameEngineRegistry.resolveForRoom(roomCode).handleAction(roomCode, userId, action);
         } catch (Exception ex) {
             log.warn("Malformed game action from user={}: {}", userId, message.getPayload(), ex);
             broadcastService.sendTo(roomCode, userId, GameEvent.of(EventType.ERROR).with("message", "Malformed action payload"));

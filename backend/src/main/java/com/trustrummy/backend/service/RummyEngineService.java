@@ -6,12 +6,14 @@ import com.trustrummy.backend.entity.PlayerStatus;
 import com.trustrummy.backend.entity.RoomPlayer;
 import com.trustrummy.backend.game.config.GameConfig;
 import com.trustrummy.backend.game.engine.DeckFactory;
+import com.trustrummy.backend.game.engine.GameEngine;
 import com.trustrummy.backend.game.engine.HandValidator;
 import com.trustrummy.backend.game.engine.ScoreCalculator;
 import com.trustrummy.backend.game.engine.TurnManager;
 import com.trustrummy.backend.game.model.Card;
 import com.trustrummy.backend.game.model.DealStatus;
 import com.trustrummy.backend.game.model.DeclareResult;
+import com.trustrummy.backend.game.model.GameType;
 import com.trustrummy.backend.game.model.GameVariant;
 import com.trustrummy.backend.game.model.GroupingResult;
 import com.trustrummy.backend.game.model.MatchPlayerStatus;
@@ -57,7 +59,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class RummyEngineService {
+public class RummyEngineService implements GameEngine {
 
     private final GameStateService gameStateService;
     private final GameRoomRepository gameRoomRepository;
@@ -75,6 +77,12 @@ public class RummyEngineService {
     // Entry point
     // ------------------------------------------------------------------
 
+    @Override
+    public GameType supportedGameType() {
+        return GameType.RUMMY;
+    }
+
+    @Override
     public void handleAction(String roomCode, Long userId, GameActionMessage action) {
         MatchState match = gameStateService.getOrCreate(roomCode);
 
@@ -113,6 +121,7 @@ public class RummyEngineService {
     }
 
     /** Builds a personalized snapshot for a freshly connected session (e.g. on WebSocket handshake). */
+    @Override
     public GameEvent buildSnapshotEventFor(String roomCode, Long userId) {
         MatchState match = gameStateService.getOrCreate(roomCode);
         if (match.getCurrentDeal() == null) {
@@ -505,6 +514,7 @@ public class RummyEngineService {
      * forfeited seat behaves identically to a voluntary drop for scoring
      * and match-progression purposes.
      */
+    @Override
     public void forfeitDisconnectedPlayer(String roomCode, Long userId) {
         MatchState match = gameStateService.get(roomCode);
         if (match == null) {
