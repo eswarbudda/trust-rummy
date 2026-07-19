@@ -81,6 +81,28 @@ class Card {
     );
   }
 
+  /// Parses the compact wire code the live gameplay WebSocket actually
+  /// sends (`Card.getCode()` on the backend, e.g. "AS", "10H", "JK") — the
+  /// deal snapshot payloads (`hand`, `discardTop`, `cutJokerCard`, meld
+  /// `cards[]`) carry cards as these bare strings, not the `{suit,value}`
+  /// object shape [Card.fromJson] expects.
+  factory Card.fromCode(String code) {
+    if (code == Value.joker.shortCode) {
+      return const Card(value: Value.joker);
+    }
+    final suitCode = code.substring(code.length - 1);
+    final rankCode = code.substring(0, code.length - 1);
+    final suit = Suit.values.firstWhere((s) => s.shortCode == suitCode);
+    final value = Value.values.firstWhere((v) => v.shortCode == rankCode);
+    return Card(value: value, suit: suit);
+  }
+
+  /// Whether this card counts as a joker for meld purposes this deal — a
+  /// printed joker, or any card whose rank matches the deal's cut wild
+  /// value (`RULES_ENGINE.md` §4). Purely a display hint for highlighting;
+  /// real meld validation only ever happens server-side on `DECLARE`.
+  bool isWildFor(Value? wildValue) => isPrintedJoker || (wildValue != null && value == wildValue);
+
   Map<String, dynamic> toJson() => {
         'suit': suit?.name.toUpperCase(),
         'value': value.name.toUpperCase(),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'account_test_screen.dart';
 import 'game_test_screen.dart';
+import 'rummy_table_mockup_screen.dart';
 import 'telemetry_screen.dart';
 
 /// Simple launcher between the backend-connectivity test tools built so far.
@@ -22,6 +23,14 @@ class HomeScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const RummyTableMockupScreen()),
+                  ),
+                  icon: const Icon(Icons.style_rounded),
+                  label: const Text('Rummy Table — Visual Mockup'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const GameTestScreen()),
                   ),
