@@ -23,7 +23,11 @@ import java.util.Map;
  * Durable, audit-trail persistence for the Rummy engine. Every method here
  * is {@code @Async} — {@code RummyEngineService} fires-and-forgets these
  * calls so the WebSocket hot path (draw/discard/declare/drop) never blocks
- * on a database round-trip.
+ * on a database round-trip. They all run on the single-threaded
+ * {@code gamePersistenceExecutor} (see {@code AsyncConfig}) rather than
+ * Spring's shared default pool, so that {@code recordMatchStart} for a room
+ * is always fully applied before that same room's {@code recordMatchEnd}
+ * runs, even though both are asynchronous from the caller's point of view.
  */
 @Slf4j
 @Service
@@ -36,7 +40,7 @@ public class GamePersistenceService {
     private final RoomPlayerRepository roomPlayerRepository;
     private final UserRepository userRepository;
 
-    @Async
+    @Async("gamePersistenceExecutor")
     @Transactional
     public void recordMatchStart(String roomCode) {
         gameRoomRepository.findByRoomCode(roomCode).ifPresentOrElse(room -> {
@@ -51,7 +55,7 @@ public class GamePersistenceService {
         }, () -> log.warn("recordMatchStart: unknown room {}", roomCode));
     }
 
-    @Async
+    @Async("gamePersistenceExecutor")
     @Transactional
     public void recordMove(String roomCode, Long userId, MoveType moveType, String moveDataJson, long sequenceNo) {
         gameRoomRepository.findByRoomCode(roomCode).ifPresent(room ->
@@ -68,7 +72,20 @@ public class GamePersistenceService {
                         })));
     }
 
-    @Async
+    /**
+     * Flushes the outcome of a finished match to the database.
+     * <p>
+     * A match with no {@code winnerUserId} (e.g. every remaining player
+     * dropped/forfeited out of the same deal simultaneously, or the last
+     * active seat disconnected before anyone could be declared a winner)
+     * never reached a real gameplay resolution, so its {@link GameSession}
+     * is recorded as {@link SessionStatus#ABORTED} rather than
+     * {@link SessionStatus#COMPLETED} — this is the only place either
+     * status is ever assigned, and previously every match end was recorded
+     * as {@code COMPLETED} regardless, making an abandoned match
+     * indistinguishable from a cleanly declared one in the data.
+     */
+    @Async("gamePersistenceExecutor")
     @Transactional
     public void recordMatchEnd(String roomCode, Long winnerUserId, Map<Long, Integer> finalScores) {
         gameRoomRepository.findByRoomCode(roomCode).ifPresent(room -> {
@@ -76,7 +93,7 @@ public class GamePersistenceService {
             gameRoomRepository.save(room);
 
             gameSessionRepository.findFirstByGameRoomIdOrderByStartedAtDesc(room.getId()).ifPresent(session -> {
-                session.setStatus(SessionStatus.COMPLETED);
+                session.setStatus(winnerUserId != null ? SessionStatus.COMPLETED : SessionStatus.ABORTED);
                 session.setEndedAt(Instant.now());
                 if (winnerUserId != null) {
                     userRepository.findById(winnerUserId).ifPresent(session::setWinner);

@@ -30,6 +30,8 @@ All gameplay mutation is funneled through `RummyEngineService`, which acquires `
 WAITING --(host sends START_MATCH, >=2 seated players)--> IN_PROGRESS --(1 active player remains, or POINTS variant deal ends)--> COMPLETED
 ```
 
+The moment a match reaches `COMPLETED`, `RummyEngineService#finishMatch` evicts its `MatchState` from `GameStateService` (`gameStateService.remove(roomCode)`) — a naturally-finished match never lingers in memory for the rest of the process's lifetime; only a still-`WAITING`/`IN_PROGRESS` room being disbanded via `RoomService` removed it previously. The durable record from here on is the DB `GameSession` row (§10); the WebSocket channel has nothing further to say about a finished match, and a room can never restart without going through the lobby's `WAITING` flow again.
+
 ### 2.2 Deal lifecycle (`DealStatus`)
 
 ```
@@ -165,11 +167,13 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 
 ## 10. Persistence
 
-`GamePersistenceService` (all methods `@Async`, called fire-and-forget from `RummyEngineService`) keeps the hot path off the database:
+`GamePersistenceService` (all methods `@Async("gamePersistenceExecutor")`, called fire-and-forget from `RummyEngineService`) keeps the hot path off the database:
 
-- `recordMatchStart` — flips the room to `IN_PROGRESS`, opens a `GameSession`.
+- `recordMatchStart` — flips the room to `IN_PROGRESS`, opens a `GameSession` (`SessionStatus.ACTIVE`).
 - `recordMove` — appends a `GameMoveLog` row per draw/discard/declare/drop (sequence-numbered per room).
-- `recordMatchEnd` — closes the `GameSession` (winner, `endedAt`), writes each player's final `cumulativeScore` onto their `RoomPlayer.score`, flips the room to `COMPLETED`.
+- `recordMatchEnd` — closes the `GameSession` (winner, `endedAt`), writes each player's final `cumulativeScore` onto their `RoomPlayer.score`, flips the room to `COMPLETED`. The `GameSession.status` is set to `SessionStatus.COMPLETED` when `finishMatch` was called with a real `matchWinnerId`, or `SessionStatus.ABORTED` when it wasn't (every remaining player dropped/forfeited out of the same deal at once, or a wrong `DECLARE` voided the final deal with nobody left to win) — this is the only place either status is ever assigned, so an abandoned match is never indistinguishable from a cleanly declared one in the data.
+
+`recordMatchStart`, `recordMove`, and `recordMatchEnd` for the same room are always fired in that chronological order from the same synchronous engine call chain, but `@Async` alone doesn't guarantee they *execute* in submission order — Spring's shared default executor has multiple worker threads, so two calls submitted back-to-back can race. `AsyncConfig#gamePersistenceExecutor` is a dedicated single-worker `ThreadPoolTaskExecutor` specifically so this service's queue is strict FIFO, guaranteeing e.g. `recordMatchStart`'s `GameSession` insert has committed before that same room's `recordMatchEnd` tries to update it.
 
 ## 11. Room lobby REST contract
 

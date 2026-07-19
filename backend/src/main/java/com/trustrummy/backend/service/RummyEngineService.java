@@ -355,6 +355,15 @@ public class RummyEngineService {
         broadcastService.broadcast(match.getRoomCode(), GameEvent.of(EventType.MATCH_ENDED)
                 .with("winnerUserId", matchWinnerId)
                 .with("finalScores", finalScores));
+
+        // The DB row (GameSession/RoomPlayer, flushed async above) is now the
+        // durable record of this match; nothing further reads this in-memory
+        // MatchState once MATCH_ENDED has gone out, and a room can never
+        // rejoin/restart without going through RoomService's WAITING flow
+        // again. Evict it so a naturally-completed match doesn't linger in
+        // the map for the rest of the process's lifetime (previously only
+        // RoomService.disbandRoom ever removed match state).
+        gameStateService.remove(match.getRoomCode());
     }
 
     // ------------------------------------------------------------------
