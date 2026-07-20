@@ -33,7 +33,7 @@ class RummyActionBar extends StatelessWidget {
           onTap: canDrop ? onDrop : null,
           tooltip: canDrop ? 'Fold this deal' : 'Drop is only available before you draw',
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 16),
         Tooltip(
           message: canShow ? 'Claim a winning hand' : 'Draw a card first, then you can Show',
           child: Opacity(
@@ -76,8 +76,8 @@ class _ActionButton extends StatelessWidget {
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          constraints: const BoxConstraints(minWidth: 88, minHeight: 44),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          constraints: const BoxConstraints(minWidth: 96, minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           alignment: Alignment.center,
           child: Text(
             label,

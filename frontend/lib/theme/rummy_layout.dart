@@ -27,12 +27,14 @@ class RummyLayout {
   double get handSlotMax => _s(58);
   double get handSoftGap => _s(3);
   double get handMeldGap => _s(20);
+  /// Preferred hand band height; actual render may scale down via FittedBox
+  /// when the local player column is short (avoids bottom overflow).
   double get handHeightPlain => _s(140);
   double get handHeightWithMelds => _s(150);
   double get handEmptyHeight => _s(140);
 
-  /// Room under the hand for the local avatar on the wood rim (name sits below).
-  double get handBottomInset => _s(52);
+  /// Legacy inset; local seat no longer overlaps the hand in the board Column.
+  double get handBottomInset => _s(8);
 
   // --- Center piles ---
   double get pileSpacingDeckToDiscard => _s(32);

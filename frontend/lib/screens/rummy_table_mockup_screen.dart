@@ -6,21 +6,11 @@ import '../models/card.dart' as rummy;
 import '../models/game_state.dart';
 import '../theme/rummy_colors.dart';
 import '../theme/rummy_layout.dart';
+import '../widgets/rummy/hand_grouping.dart';
 import '../widgets/rummy/hand_view.dart';
-import '../widgets/rummy/rummy_action_bar.dart';
-import '../widgets/rummy/rummy_table_board.dart';
+import '../widgets/rummy/rummy_game_view.dart';
 
-/// Static, non-networked visual mockup of the Rummy gameplay table — built
-/// for a design review before any real `GameWebSocketService` wiring
-/// lands. Every player, card, score, and turn-phase value on this screen
-/// is hardcoded sample data; nothing here talks to the backend or opens a
-/// socket.
-///
-/// The "Preview phase" chips just let a reviewer flip between the
-/// `AWAITING_DRAW` and `AWAITING_DISCARD` contextual action bars without a
-/// live match — they (and the tap handlers that only show a snackbar) are
-/// scaffolding for this visual-review milestone and will be replaced by
-/// real WebSocket-driven state in the follow-up.
+/// Static, non-networked visual mockup — feeds sample props into [RummyGameView].
 class RummyTableMockupScreen extends StatefulWidget {
   const RummyTableMockupScreen({super.key});
 
@@ -57,7 +47,9 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
   RummyTurnPhase _previewPhase = RummyTurnPhase.awaitingDraw;
 
   /// Empty at deal — only valid melds get visual trays (via auto-split / Sort).
-  final Set<int> _groupBreaks = {};
+  /// Manual group breaks after card index (gap between i and i+1).
+  /// Seeded to match the sample hand's intended melds for the mockup.
+  final Set<int> _groupBreaks = {3, 7, 10};
 
   /// Single layout source for seats / piles / hand — tune via [RummyLayout.scaled].
   static const RummyLayout _layout = RummyLayout(scale: 1.15);
@@ -140,143 +132,90 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const isMyTurn = true;
-
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: RummyColors.boardGradient),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _topBar(context),
-              _previewPhaseSwitch(),
-              Expanded(
-                child: RummyTableBoard(
-                  opponents: _opponents,
-                  me: _me,
-                  hand: _hand,
-                  wildValue: _wildValue,
-                  cutJokerCard: _cutJoker,
-                  closedDeckCount: _closedDeckCount,
-                  discardPile: _discardPile,
-                  finishSlotCard: _finishSlotCard,
-                  phase: _previewPhase,
-                  currentTurnUserId: _me.userId,
-                  turnSecondsRemaining: _turnSecondsLeft,
-                  layout: _layout,
-                  selectedIndex: _selectedIndex,
-                  groupBreaksAfterIndex: _groupBreaks,
-                  declareResult: _lastDeclareResult,
-                  declareResultName: 'You',
-                  onCloseDeclareResult: () => setState(() => _lastDeclareResult = null),
-                  onCardTap: (index, card) {
-                    setState(() => _selectedIndex = _selectedIndex == index ? null : index);
-                  },
-                  onToggleGroupBreak: (index) => setState(() {
-                    if (_groupBreaks.contains(index)) {
-                      _groupBreaks.remove(index);
-                    } else {
-                      _groupBreaks.add(index);
-                    }
-                  }),
-                  onMoveCard: _moveCard,
-                  onMoveIntoGap: _moveIntoGap,
-                  onAcceptFromPile: _previewPhase == RummyTurnPhase.awaitingDraw ? _drawFromPile : null,
-                  onDrawClosed: _previewPhase == RummyTurnPhase.awaitingDraw ? () => _drawFromPile(true) : null,
-                  onDrawOpen: _previewPhase == RummyTurnPhase.awaitingDraw ? () => _drawFromPile(false) : null,
-                  onDiscardDrop: _previewPhase == RummyTurnPhase.awaitingDiscard
-                      ? (payload) => _discardCard(payload.handIndex)
-                      : null,
-                  onFinishDrop: _previewPhase == RummyTurnPhase.awaitingDiscard
-                      ? (payload) {
-                          setState(() => _selectedIndex = payload.handIndex);
-                          _openDeclareReview();
-                        }
-                      : null,
-                ),
-              ),
-              if (_selectedIndex != null) _selectedCardTools(),
-              _footerActions(isMyTurn),
-            ],
-          ),
-        ),
-      ),
+    return RummyGameView(
+      mode: RummyGameUiMode.active,
+      headerLabel: 'Entry : ₹ 5   ·   Points Rummy   ·   #TR8794201',
+      layout: _layout,
+      opponents: _opponents,
+      me: _me,
+      hand: _hand,
+      wildValue: _wildValue,
+      cutJokerCard: _cutJoker,
+      closedDeckCount: _closedDeckCount,
+      discardPile: _discardPile,
+      finishSlotCard: _finishSlotCard,
+      phase: _previewPhase,
+      currentTurnUserId: _me.userId,
+      turnSecondsRemaining: _turnSecondsLeft,
+      selectedIndex: _selectedIndex,
+      groupBreaksAfterIndex: _groupBreaks,
+      declareResult: _lastDeclareResult,
+      declareResultName: 'You',
+      isMyTurn: true,
+      canDiscardSelected: _previewPhase == RummyTurnPhase.awaitingDiscard,
+      headerTrailing: _walletChip(),
+      belowHeader: _previewPhaseSwitch(),
+      onExit: () => _confirmExit(context),
+      onCloseDeclareResult: () => setState(() => _lastDeclareResult = null),
+      onCardTap: (index, card) {
+        setState(() => _selectedIndex = _selectedIndex == index ? null : index);
+      },
+      onToggleGroupBreak: (index) => setState(() {
+        final next = HandGrouping.toggleBreak(_groupBreaks, index, _hand.length);
+        _groupBreaks
+          ..clear()
+          ..addAll(next);
+      }),
+      onMoveCard: _moveCard,
+      onMoveIntoGap: _moveIntoGap,
+      onAcceptFromPile: _previewPhase == RummyTurnPhase.awaitingDraw ? _drawFromPile : null,
+      onDrawClosed: _previewPhase == RummyTurnPhase.awaitingDraw ? () => _drawFromPile(true) : null,
+      onDrawOpen: _previewPhase == RummyTurnPhase.awaitingDraw ? () => _drawFromPile(false) : null,
+      onDiscardDrop: _previewPhase == RummyTurnPhase.awaitingDiscard
+          ? (payload) => _discardCard(payload.handIndex)
+          : null,
+      onFinishDrop: _previewPhase == RummyTurnPhase.awaitingDiscard
+          ? (payload) {
+              setState(() => _selectedIndex = payload.handIndex);
+              _openDeclareReview();
+            }
+          : null,
+      onDrop: _confirmDropGame,
+      onDeclare: _openDeclareReview,
+      onNudgeLeft: () => _nudgeSelected(-1),
+      onNudgeRight: () => _nudgeSelected(1),
+      onToggleSplit: () {
+        final i = _selectedIndex;
+        if (i == null) return;
+        setState(() {
+          final next = HandGrouping.toggleBreak(_groupBreaks, i, _hand.length);
+          _groupBreaks
+            ..clear()
+            ..addAll(next);
+        });
+      },
+      onDiscardSelected: () {
+        final i = _selectedIndex;
+        if (i != null) _discardCard(i);
+      },
     );
   }
 
-  Widget _topBar(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 10, 4),
-      child: Row(
-        children: [
-          _exitButton(context),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: RummyColors.headerPill.withOpacity(0.92),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: const Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      'Entry : ₹ 5   ·   Points Rummy   ·   #TR8794201',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  SizedBox(width: 6),
-                  Icon(Icons.signal_cellular_alt, color: RummyColors.success, size: 16),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.35),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: RummyColors.gold.withOpacity(0.45)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.account_balance_wallet_outlined, color: RummyColors.gold, size: 16),
-                SizedBox(width: 5),
-                Text('₹ 80.00', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _exitButton(BuildContext context) {
-    return Material(
-      color: Colors.black.withOpacity(0.4),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: () => _confirmExit(context),
+  Widget _walletChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.35),
         borderRadius: BorderRadius.circular(10),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.logout_rounded, color: Colors.white, size: 18),
-              SizedBox(width: 5),
-              Text(
-                'EXIT',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.6),
-              ),
-            ],
-          ),
-        ),
+        border: Border.all(color: RummyColors.gold.withOpacity(0.45)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.account_balance_wallet_outlined, color: RummyColors.gold, size: 16),
+          SizedBox(width: 5),
+          Text('₹ 80.00', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+        ],
       ),
     );
   }
@@ -326,28 +265,6 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
     );
   }
 
-  Widget _footerActions(bool isMyTurn) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Text(
-            'SCORE: ${_me.cumulativeScore}',
-            style: const TextStyle(color: RummyColors.gold, fontWeight: FontWeight.w700, fontSize: 12),
-          ),
-          const SizedBox(width: 16),
-          RummyActionBar(
-            isMyTurn: isMyTurn,
-            phase: _previewPhase,
-            onDrop: _confirmDropGame,
-            onDeclare: _openDeclareReview,
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _phaseChip(String label, RummyTurnPhase value) {
     final selected = _previewPhase == value;
     return ChoiceChip(
@@ -363,97 +280,6 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
       labelStyle: TextStyle(color: selected ? Colors.black : Colors.white70),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
-  /// Reliable grouping controls when a card is selected (works even if
-  /// drag-and-drop is flaky on web).
-  Widget _selectedCardTools() {
-    final i = _selectedIndex!;
-    final canLeft = i > 0;
-    final canRight = i < _hand.length - 1;
-    final splitActive = i < _hand.length - 1 && _groupBreaks.contains(i);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _toolChip(
-            icon: Icons.chevron_left_rounded,
-            label: 'Left',
-            enabled: canLeft,
-            onTap: canLeft ? () => _nudgeSelected(-1) : null,
-          ),
-          const SizedBox(width: 8),
-          _toolChip(
-            icon: Icons.view_column_rounded,
-            label: splitActive ? 'Merge' : 'Split',
-            enabled: canRight,
-            active: splitActive,
-            onTap: canRight
-                ? () => setState(() {
-                      if (_groupBreaks.contains(i)) {
-                        _groupBreaks.remove(i);
-                      } else {
-                        _groupBreaks.add(i);
-                      }
-                    })
-                : null,
-          ),
-          const SizedBox(width: 8),
-          _toolChip(
-            icon: Icons.chevron_right_rounded,
-            label: 'Right',
-            enabled: canRight,
-            onTap: canRight ? () => _nudgeSelected(1) : null,
-          ),
-          if (_previewPhase == RummyTurnPhase.awaitingDiscard) ...[
-            const SizedBox(width: 8),
-            _toolChip(
-              icon: Icons.upload_rounded,
-              label: 'Discard',
-              enabled: true,
-              onTap: () => _discardCard(i),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _toolChip({
-    required IconData icon,
-    required String label,
-    required bool enabled,
-    bool active = false,
-    VoidCallback? onTap,
-  }) {
-    return Material(
-      color: active ? RummyColors.gold.withOpacity(0.25) : Colors.white.withOpacity(enabled ? 0.1 : 0.04),
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 18, color: enabled ? (active ? RummyColors.gold : Colors.white) : Colors.white30),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: enabled ? (active ? RummyColors.gold : Colors.white70) : Colors.white30,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -500,19 +326,24 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
     });
   }
 
-  /// Drag a card from [fromIndex] onto [toIndex].
+  /// Drag a card from [fromIndex] onto [toIndex]. Preserves group breaks.
   void _moveCard(int fromIndex, int toIndex) {
     if (fromIndex == toIndex || fromIndex < 0 || fromIndex >= _hand.length) return;
     var target = toIndex.clamp(0, _hand.length - 1);
     setState(() {
+      final before = Set<int>.from(_groupBreaks);
       final card = _hand.removeAt(fromIndex);
       if (fromIndex < target) target -= 1;
       _hand.insert(target, card);
+      final next = HandGrouping.afterMove(before, fromIndex, target, _hand.length);
+      _groupBreaks
+        ..clear()
+        ..addAll(next);
       _selectedIndex = target;
     });
   }
 
-  /// Drop onto the gap after [gapAfterIndex] — move card there and open a group split.
+  /// Drop onto the gap after [gapAfterIndex] — move card there; keep breaks.
   void _moveIntoGap(int fromIndex, int gapAfterIndex) {
     if (fromIndex < 0 || fromIndex >= _hand.length) return;
     var insertAt = gapAfterIndex + 1;
@@ -520,8 +351,13 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
     insertAt = insertAt.clamp(0, _hand.length - 1);
 
     setState(() {
+      final before = Set<int>.from(_groupBreaks);
       final card = _hand.removeAt(fromIndex);
       _hand.insert(insertAt, card);
+      final next = HandGrouping.afterMove(before, fromIndex, insertAt, _hand.length);
+      _groupBreaks
+        ..clear()
+        ..addAll(next);
       _selectedIndex = insertAt;
     });
   }
@@ -560,13 +396,13 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
     }
     final card = _hand[index];
     setState(() {
+      final shifted = HandGrouping.afterRemove(_groupBreaks, index, _hand.length - 1);
       _hand.removeAt(index);
       _discardPile = [..._discardPile, card];
       _selectedIndex = null;
-      final shifted = _groupBreaks.where((i) => i != index).map((i) => i > index ? i - 1 : i).toSet();
       _groupBreaks
         ..clear()
-        ..addAll(shifted.where((i) => i < _hand.length - 1));
+        ..addAll(shifted);
       _restartTurnTimer();
     });
     _showMockSnack('Discarded ${card.code}');
@@ -588,7 +424,7 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
     final extraCard = _hand[extraIndex];
     final remaining = List<rummy.Card>.from(_hand)..removeAt(extraIndex);
     final breaksForRemaining = _groupBreaks.where((i) => i != extraIndex).map((i) => i > extraIndex ? i - 1 : i).toSet();
-    final groups = _splitIntoGroups(remaining, breaksForRemaining);
+    final groups = HandGrouping.splitIntoGroups(remaining, breaksForRemaining);
     final melds = [for (final group in groups) MeldView(type: _classifyGroup(group), cards: group)];
 
     showModalBottomSheet<void>(
@@ -673,38 +509,9 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
     );
   }
 
-  List<List<rummy.Card>> _splitIntoGroups(List<rummy.Card> ordered, Set<int> breaksAfterIndex) {
-    final groups = <List<rummy.Card>>[];
-    var current = <rummy.Card>[];
-    for (var i = 0; i < ordered.length; i++) {
-      current.add(ordered[i]);
-      if (breaksAfterIndex.contains(i) && i < ordered.length - 1) {
-        groups.add(current);
-        current = [];
-      }
-    }
-    if (current.isNotEmpty) groups.add(current);
-    return groups;
-  }
-
-  /// A client-side *label* heuristic only — purely cosmetic for this
-  /// review preview. Real meld validation (pure-sequence requirement,
-  /// wildcard rules, etc.) only ever happens server-side via
-  /// `HandValidator` at `DECLARE` time.
   String _classifyGroup(List<rummy.Card> group) => HandView.classifyGroup(group, _wildValue);
 
-  String _meldLabel(String type) {
-    switch (type) {
-      case 'PURE_SEQUENCE':
-        return 'Pure Sequence';
-      case 'SEQUENCE':
-        return 'Sequence';
-      case 'SET':
-        return 'Set';
-      default:
-        return 'Group';
-    }
-  }
+  String _meldLabel(String type) => HandView.meldLabel(type);
 
   void _showMockSnack(String message) {
     if (message.isEmpty) return;

@@ -370,7 +370,12 @@ class RummyGameState {
         break;
       }
     }
-    if (myHand == null) return;
+    // After DROP the server removes the seat's hand — clear local cards so
+    // the dropper doesn't keep rendering a stale arrangement.
+    if (myHand == null) {
+      _handArrangement = const [];
+      return;
+    }
     _handArrangement = _reconcileArrangement(isFreshDeal ? const [] : _handArrangement, myHand);
   }
 

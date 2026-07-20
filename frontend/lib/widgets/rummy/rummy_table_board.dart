@@ -11,10 +11,9 @@ import 'hand_view.dart';
 import 'player_seat_view.dart';
 import 'table_surface.dart';
 
-/// Shared felt board: rim seats, center piles, local hand, optional declare panel.
-///
-/// Used by both the visual mockup and the live [RummyGameScreen]. Chrome
-/// (exit / meta pill / action bar / phase chips) stays on the parent screen.
+/// Felt board: opponent rim seats + center piles in the upper region,
+/// then a dedicated local column (hand → name → avatar) that never
+/// competes with [Positioned] overlays for the same vertical space.
 class RummyTableBoard extends StatelessWidget {
   final List<PlayerView> opponents;
   final PlayerView me;
@@ -50,6 +49,9 @@ class RummyTableBoard extends StatelessWidget {
   final ValueChanged<HandDragPayload>? onDiscardDrop;
   final ValueChanged<HandDragPayload>? onFinishDrop;
 
+  /// Selection tools (Left / Create Group / Right) rendered under the seat.
+  final Widget? selectionTools;
+
   const RummyTableBoard({
     super.key,
     required this.opponents,
@@ -79,6 +81,7 @@ class RummyTableBoard extends StatelessWidget {
     this.onDrawOpen,
     this.onDiscardDrop,
     this.onFinishDrop,
+    this.selectionTools,
   });
 
   @override
@@ -102,59 +105,101 @@ class RummyTableBoard extends StatelessWidget {
               width: width,
               height: height,
               child: TableSurface(
-                child: Stack(
-                  clipBehavior: Clip.none,
+                child: Column(
                   children: [
-                    ..._opponentRimSeats(Size(width, height), L),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      top: height * 0.24,
-                      height: L.handCardHeight + 40 * L.scale,
-                      child: Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: CardPilesView(
-                            closedDeckCount: closedDeckCount,
-                            discardPile: discardPile,
-                            discardTop: discardTop,
-                            cutJokerCard: cutJokerCard,
-                            wildValue: wildValue,
-                            finishSlotCard: finishSlotCard,
-                            layout: L,
-                            onDrawClosed: onDrawClosed,
-                            onDrawOpen: onDrawOpen,
-                            onDiscardDrop: onDiscardDrop,
-                            onFinishDrop: onFinishDrop,
-                          ),
+                    // Opponents + piles — takes remaining space above the local zone.
+                    Expanded(
+                      flex: 5,
+                      child: LayoutBuilder(
+                        builder: (context, pileConstraints) {
+                          final pileSize = Size(pileConstraints.maxWidth, pileConstraints.maxHeight);
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              ..._opponentRimSeats(pileSize, L),
+                              Center(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: CardPilesView(
+                                    closedDeckCount: closedDeckCount,
+                                    discardPile: discardPile,
+                                    discardTop: discardTop,
+                                    cutJokerCard: cutJokerCard,
+                                    wildValue: wildValue,
+                                    finishSlotCard: finishSlotCard,
+                                    layout: L,
+                                    onDrawClosed: onDrawClosed,
+                                    onDrawOpen: onDrawOpen,
+                                    onDiscardDrop: onDiscardDrop,
+                                    onFinishDrop: onFinishDrop,
+                                  ),
+                                ),
+                              ),
+                              if (declareResult != null)
+                                DeclareResultPanel(
+                                  declarerName: declareResultName ?? 'Player',
+                                  result: declareResult!,
+                                  onClose: onCloseDeclareResult ?? () {},
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                    // Local zone: hand → username → avatar → tools (no Stack overlap).
+                    Expanded(
+                      flex: 4,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8 * L.scale),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.bottomCenter,
+                                  child: SizedBox(
+                                    width: width - 16 * L.scale,
+                                    height: L.handHeightWithMelds,
+                                    child: HandView(
+                                      cards: hand,
+                                      wildValue: wildValue,
+                                      selectedIndex: selectedIndex,
+                                      groupBreaksAfterIndex: groupBreaksAfterIndex,
+                                      layout: L,
+                                      onCardTap: onCardTap,
+                                      onToggleGroupBreak: onToggleGroupBreak,
+                                      onMoveCard: onMoveCard,
+                                      onMoveIntoGap: onMoveIntoGap,
+                                      onAcceptFromPile: onAcceptFromPile,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 6 * L.scale),
+                            PlayerSeatView(
+                              player: me,
+                              isCurrentTurn: currentTurnUserId != null && me.userId == currentTurnUserId,
+                              isMe: true,
+                              compact: true,
+                              nameAbove: true,
+                              turnSecondsRemaining:
+                                  (currentTurnUserId != null && me.userId == currentTurnUserId)
+                                      ? turnSecondsRemaining
+                                      : null,
+                              layout: L,
+                            ),
+                            if (selectionTools != null) ...[
+                              SizedBox(height: 10 * L.scale),
+                              selectionTools!,
+                            ],
+                            SizedBox(height: 4 * L.scale),
+                          ],
                         ),
                       ),
                     ),
-                    Positioned(
-                      left: 10,
-                      right: 10,
-                      bottom: L.handBottomInset,
-                      height: L.handHeightWithMelds + 4 * L.scale,
-                      child: HandView(
-                        cards: hand,
-                        wildValue: wildValue,
-                        selectedIndex: selectedIndex,
-                        groupBreaksAfterIndex: groupBreaksAfterIndex,
-                        layout: L,
-                        onCardTap: onCardTap,
-                        onToggleGroupBreak: onToggleGroupBreak,
-                        onMoveCard: onMoveCard,
-                        onMoveIntoGap: onMoveIntoGap,
-                        onAcceptFromPile: onAcceptFromPile,
-                      ),
-                    ),
-                    _localRimSeat(Size(width, height), L),
-                    if (declareResult != null)
-                      DeclareResultPanel(
-                        declarerName: declareResultName ?? 'Player',
-                        result: declareResult!,
-                        onClose: onCloseDeclareResult ?? () {},
-                      ),
                   ],
                 ),
               ),
@@ -169,7 +214,7 @@ class RummyTableBoard extends StatelessWidget {
     final cx = size.width / 2;
     final cy = size.height / 2;
     final rx = size.width * 0.49;
-    final ry = size.height * 0.48;
+    final ry = size.height * 0.42;
     final count = opponents.length;
 
     if (count == 0) return const [];
@@ -184,26 +229,8 @@ class RummyTableBoard extends StatelessWidget {
           angle: count == 1 ? math.pi / 2 : math.pi - i * (math.pi / (count - 1)),
           player: opponents[i],
           layout: layout,
-          isMe: false,
         ),
     ];
-  }
-
-  Widget _localRimSeat(Size size, RummyLayout layout) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    // Name under the avatar so the hand can sit lower without covering the label.
-    return _seatAt(
-      cx: cx,
-      cy: cy,
-      rx: size.width * 0.49,
-      ry: size.height * 0.47,
-      angle: -math.pi / 2,
-      player: me,
-      layout: layout,
-      isMe: true,
-      nameAbove: false,
-    );
   }
 
   Widget _seatAt({
@@ -214,30 +241,32 @@ class RummyTableBoard extends StatelessWidget {
     required double angle,
     required PlayerView player,
     required RummyLayout layout,
-    required bool isMe,
-    bool nameAbove = false,
   }) {
     final x = cx + rx * math.cos(angle);
     final y = cy - ry * math.sin(angle);
     final seatW = layout.seatNameplateMaxWidth;
     final avatarR = layout.seatAvatarSize / 2;
-    final nameBlock = nameAbove ? 34 * layout.scale : 0.0;
+    // Name sits under the avatar for opponents — offset so the plate clears the circle.
+    final nameBlock = 28 * layout.scale;
     final isTurn = currentTurnUserId != null && player.userId == currentTurnUserId;
     return Positioned(
       left: x - seatW / 2,
-      top: y - avatarR - nameBlock,
+      top: y - avatarR,
       width: seatW,
       child: IgnorePointer(
         child: Align(
           alignment: Alignment.topCenter,
-          child: PlayerSeatView(
-            player: player,
-            isCurrentTurn: isTurn,
-            isMe: isMe,
-            compact: true,
-            nameAbove: nameAbove,
-            turnSecondsRemaining: isTurn ? turnSecondsRemaining : null,
-            layout: layout,
+          child: SizedBox(
+            height: layout.seatAvatarSize + layout.seatTimerRingPad + nameBlock,
+            child: PlayerSeatView(
+              player: player,
+              isCurrentTurn: isTurn,
+              isMe: false,
+              compact: true,
+              nameAbove: false,
+              turnSecondsRemaining: isTurn ? turnSecondsRemaining : null,
+              layout: layout,
+            ),
           ),
         ),
       ),

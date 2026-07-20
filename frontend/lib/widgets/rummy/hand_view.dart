@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/card.dart' as rummy;
 import '../../theme/rummy_colors.dart';
 import '../../theme/rummy_layout.dart';
+import 'hand_grouping.dart';
 import 'playing_card_view.dart';
 
 /// Card dragged from the local hand.
@@ -20,8 +21,9 @@ class PileDragPayload {
   const PileDragPayload({required this.fromClosed});
 }
 
-/// Local player's hand. Only valid sets/sequences get a tray + label;
-/// loose cards stay in a plain fan with no group chrome.
+/// Local player's hand. Groups are defined only by [groupBreaksAfterIndex]
+/// (manual Split/Merge); cards are never auto-reordered. Each group is
+/// reclassified with [classifyGroup] whenever the hand rebuilds.
 class HandView extends StatelessWidget {
   final List<rummy.Card> cards;
   final rummy.Value? wildValue;
@@ -51,6 +53,19 @@ class HandView extends StatelessWidget {
   static bool isFormedMeld(String kind) =>
       kind == 'SET' || kind == 'SEQUENCE' || kind == 'PURE_SEQUENCE';
 
+  /// Manual groups from breaks, each labeled via [classifyGroup].
+  List<HandSegment> _segments() {
+    final groups = HandGrouping.splitIntoGroups(cards, groupBreaksAfterIndex);
+    final segments = <HandSegment>[];
+    var start = 0;
+    for (final group in groups) {
+      final kind = group.length >= 3 ? classifyGroup(group, wildValue) : (group.length >= 2 ? 'GROUP' : null);
+      segments.add(HandSegment(startIndex: start, cards: group, kind: kind));
+      start += group.length;
+    }
+    return segments;
+  }
+
   @override
   Widget build(BuildContext context) {
     final L = layout;
@@ -73,18 +88,18 @@ class HandView extends StatelessWidget {
       );
     }
 
-    // Visual groups come only from contiguous valid melds — not manual splits.
-    final segments = _meldSegments();
+    // Groups come only from manual breaks — never auto-reordered.
+    final segments = _segments();
 
     return DragTarget<PileDragPayload>(
       onWillAcceptWithDetails: (_) => onAcceptFromPile != null,
       onAcceptWithDetails: (d) => onAcceptFromPile?.call(d.data.fromClosed),
       builder: (context, pileCandidate, rejected) {
         final drawing = pileCandidate.isNotEmpty;
-        final anyFormed = segments.any((s) => s.kind != null);
+        final anyLabeled = segments.any((s) => s.showLabel);
 
         return Container(
-          height: anyFormed ? L.handHeightWithMelds : L.handHeightPlain,
+          height: anyLabeled ? L.handHeightWithMelds : L.handHeightPlain,
           decoration: drawing
               ? BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
@@ -94,15 +109,16 @@ class HandView extends StatelessWidget {
               : null,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final formedCount = segments.where((s) => s.kind != null).length;
-              final gapBudget = formedCount * L.handMeldGap + (cards.length - 1) * L.handSoftGap;
-              final available = (constraints.maxWidth * 0.96) - gapBudget - (formedCount * 20.0 * L.scale);
+              final groupCount = segments.length;
+              final gapBudget = (groupCount - 1).clamp(0, 99) * L.handMeldGap + (cards.length - 1) * L.handSoftGap;
+              final available = (constraints.maxWidth * 0.96) - gapBudget - (groupCount * 12.0 * L.scale);
               final slot = (available / cards.length).clamp(L.handSlotMin, L.handSlotMax);
 
               final rowChildren = <Widget>[];
               for (var g = 0; g < segments.length; g++) {
                 final segment = segments[g];
-                final formed = segment.kind != null;
+                final formed = segment.isFormedMeld;
+                final tray = segment.showLabel;
 
                 final cardsRow = Row(
                   mainAxisSize: MainAxisSize.min,
@@ -138,52 +154,69 @@ class HandView extends StatelessWidget {
                   ],
                 );
 
-                // Reference: cards on top, status pill underneath each group.
-                final label = formed
-                    ? '✓ ${meldLabel(segment.kind!)}'
-                    : (segment.cards.length >= 2 ? '✕ Invalid' : null);
+                final label = !segment.showLabel
+                    ? null
+                    : (formed ? '✓ ${meldLabel(segment.kind!)}' : '✕ ${meldLabel(segment.kind ?? 'GROUP')}');
                 final labelColor = formed ? RummyColors.success : RummyColors.danger;
 
                 rowChildren.add(
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: 4 * L.scale, vertical: 2 * L.scale),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        cardsRow,
-                        if (label != null) ...[
-                          SizedBox(height: 5 * L.scale),
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 8 * L.scale, vertical: 3 * L.scale),
-                            decoration: BoxDecoration(
-                              color: labelColor,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              label,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10.5 * L.scale,
-                                fontWeight: FontWeight.w800,
+                    child: DecoratedBox(
+                      decoration: tray
+                          ? BoxDecoration(
+                              color: formed
+                                  ? L.meldTrayFill.withOpacity(0.35)
+                                  : Colors.black.withOpacity(0.18),
+                              borderRadius: BorderRadius.circular(L.meldTrayRadius),
+                              border: Border.all(
+                                color: formed ? L.meldTrayBorder : Colors.white24,
+                                width: formed ? L.meldTrayBorderWidth : 1,
                               ),
-                            ),
-                          ),
-                        ],
-                      ],
+                            )
+                          : const BoxDecoration(),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: tray ? 6 * L.scale : 0,
+                          vertical: tray ? 4 * L.scale : 0,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            cardsRow,
+                            if (label != null) ...[
+                              SizedBox(height: 5 * L.scale),
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 8 * L.scale, vertical: 3 * L.scale),
+                                decoration: BoxDecoration(
+                                  color: labelColor,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10.5 * L.scale,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 );
 
                 if (g < segments.length - 1) {
                   final gapAfter = segment.startIndex + segment.cards.length - 1;
-                  final nextFormed = segments[g + 1].kind != null;
-                  final aisle = formed || nextFormed;
                   rowChildren.add(
                     Padding(
                       padding: EdgeInsets.only(top: 8 * L.scale),
                       child: _BetweenGap(
-                        width: aisle ? L.handMeldGap : L.handSoftGap + 2 * L.scale,
-                        isGroupBreak: aisle,
+                        width: L.handMeldGap,
+                        isGroupBreak: true,
                         onDrop: (from) {
                           if (onMoveIntoGap != null) {
                             onMoveIntoGap!(from, gapAfter);
@@ -212,112 +245,105 @@ class HandView extends StatelessWidget {
     );
   }
 
-  /// Walk the hand left→right; tray only contiguous valid melds (set / sequence).
-  List<_HandSegment> _meldSegments() {
-    final segments = <_HandSegment>[];
-    var i = 0;
-    while (i < cards.length) {
-      String? kind;
-      var len = 0;
-      // Prefer longer runs (sequences up to remaining; sets max 4).
-      final maxLen = cards.length - i;
-      for (var tryLen = maxLen; tryLen >= 3; tryLen--) {
-        final slice = cards.sublist(i, i + tryLen);
-        final k = classifyGroup(slice, wildValue);
-        if (isFormedMeld(k)) {
-          kind = k;
-          len = tryLen;
-          break;
-        }
-      }
-      if (kind != null) {
-        segments.add(_HandSegment(startIndex: i, cards: cards.sublist(i, i + len), kind: kind));
-        i += len;
-        continue;
-      }
-      final start = i;
-      i++;
-      while (i < cards.length) {
-        var meldStartsHere = false;
-        for (var tryLen = cards.length - i; tryLen >= 3; tryLen--) {
-          if (isFormedMeld(classifyGroup(cards.sublist(i, i + tryLen), wildValue))) {
-            meldStartsHere = true;
-            break;
-          }
-        }
-        if (meldStartsHere) break;
-        i++;
-      }
-      segments.add(_HandSegment(startIndex: start, cards: cards.sublist(start, i), kind: null));
-    }
-    return segments;
-  }
-
-  /// Client-side visual heuristic only — server validates on Declare/Show.
-  /// Sets: 3–4 same rank, distinct suits. Sequences: 3+ same suit, consecutive.
+  /// Client-side visual heuristic aligned with backend [HandValidator] classify:
+  /// sets may use jokers; sequences may use jokers for gaps/extensions within A–K.
   static String classifyGroup(List<rummy.Card> group, rummy.Value? wildValue) {
     if (group.length < 3) return 'GROUP';
 
-    final natural = group.where((c) => !c.isWildFor(wildValue)).toList();
-    final wildCount = group.length - natural.length;
-    if (natural.length < 2) return 'GROUP';
-
-    // SET: same rank, distinct suits, exactly 3 or 4 cards.
-    if (group.length <= 4 && natural.every((c) => c.value == natural.first.value)) {
-      final suits = <rummy.Suit>{};
-      for (final c in natural) {
-        if (c.suit == null) return 'GROUP';
-        if (!suits.add(c.suit!)) return 'GROUP';
+    final natural = <rummy.Card>[];
+    var wildCount = 0;
+    for (final c in group) {
+      if (c.isWildFor(wildValue)) {
+        wildCount++;
+      } else {
+        natural.add(c);
       }
+    }
+    // Need at least one natural anchor (same rule as the server).
+    if (natural.isEmpty) return 'GROUP';
+
+    // SET (3–4 cards): naturals share rank, distinct suits; jokers fill remaining.
+    if (group.length <= 4 && _isSetShape(natural)) {
       return 'SET';
     }
 
-    // SEQUENCE: same suit, consecutive ranks; wilds fill gaps only.
-    if (natural.every((c) => c.suit != null && c.suit == natural.first.suit)) {
-      final ranks = natural.map(_rankOrder).toList()..sort();
-      var gaps = 0;
-      for (var i = 1; i < ranks.length; i++) {
-        final d = ranks[i] - ranks[i - 1];
-        if (d <= 0) return 'GROUP';
-        gaps += d - 1;
-      }
-      final span = ranks.last - ranks.first + 1;
-      if (span > group.length) return 'GROUP';
-      if (gaps <= wildCount) {
-        return wildCount == 0 ? 'PURE_SEQUENCE' : 'SEQUENCE';
-      }
-    }
+    // SEQUENCE: same suit, no duplicate ranks; jokers fill gaps / extend within A–K.
+    final seq = _classifySequence(natural, wildCount, group.length);
+    if (seq != null) return seq;
+
     return 'GROUP';
   }
 
+  static bool _isSetShape(List<rummy.Card> naturals) {
+    final rank = naturals.first.value;
+    final suits = <rummy.Suit>{};
+    for (final c in naturals) {
+      if (c.value != rank) return false;
+      if (c.suit == null) return false;
+      if (!suits.add(c.suit!)) return false; // duplicate suit
+    }
+    return true;
+  }
+
+  /// Returns PURE_SEQUENCE / SEQUENCE, or null if invalid.
+  static String? _classifySequence(List<rummy.Card> naturals, int jokerCount, int groupLength) {
+    if (naturals.first.suit == null) return null;
+    final suit = naturals.first.suit!;
+    final ranks = <int>{};
+    for (final c in naturals) {
+      if (c.suit != suit) return null;
+      final r = _rankOrder(c); // ACE=0 … KING=12
+      if (r < 0 || !ranks.add(r)) return null; // duplicate rank
+    }
+
+    final sorted = ranks.toList()..sort();
+    final min = sorted.first;
+    final max = sorted.last;
+    final span = max - min + 1;
+    final internalGaps = span - naturals.length;
+    if (internalGaps < 0 || internalGaps > jokerCount) return null;
+
+    // Leftover jokers must extend the run without leaving A–K.
+    final extension = jokerCount - internalGaps;
+    final roomBelow = min;
+    final roomAbove = 12 - max;
+    if (roomBelow + roomAbove < extension) return null;
+
+    // Contiguous group length must match naturals + jokers used in this meld.
+    if (naturals.length + jokerCount != groupLength) return null;
+
+    return jokerCount == 0 ? 'PURE_SEQUENCE' : 'SEQUENCE';
+  }
+
+  /// Ace-low ordinal matching backend [Value.ordinal] (ACE=0 … KING=12).
   static int _rankOrder(rummy.Card c) {
     switch (c.value) {
       case rummy.Value.ace:
-        return 1;
+        return 0;
       case rummy.Value.two:
-        return 2;
+        return 1;
       case rummy.Value.three:
-        return 3;
+        return 2;
       case rummy.Value.four:
-        return 4;
+        return 3;
       case rummy.Value.five:
-        return 5;
+        return 4;
       case rummy.Value.six:
-        return 6;
+        return 5;
       case rummy.Value.seven:
-        return 7;
+        return 6;
       case rummy.Value.eight:
-        return 8;
+        return 7;
       case rummy.Value.nine:
-        return 9;
+        return 8;
       case rummy.Value.ten:
-        return 10;
+        return 9;
       case rummy.Value.jack:
-        return 11;
+        return 10;
       case rummy.Value.queen:
-        return 12;
+        return 11;
       case rummy.Value.king:
-        return 13;
+        return 12;
       case rummy.Value.joker:
         return -1;
     }
@@ -331,19 +357,11 @@ class HandView extends StatelessWidget {
         return 'Impure Sequence';
       case 'SET':
         return 'Set';
+      case 'GROUP':
       default:
-        return '';
+        return 'Invalid Group';
     }
   }
-}
-
-class _HandSegment {
-  final int startIndex;
-  final List<rummy.Card> cards;
-  /// Non-null only for a valid set / sequence.
-  final String? kind;
-
-  const _HandSegment({required this.startIndex, required this.cards, required this.kind});
 }
 
 class _HandCard extends StatelessWidget {

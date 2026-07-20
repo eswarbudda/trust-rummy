@@ -7,10 +7,10 @@ import '../models/game_state.dart';
 import '../services/game_websocket_service.dart';
 import '../theme/rummy_colors.dart';
 import '../theme/rummy_layout.dart';
-import '../widgets/rummy/rummy_action_bar.dart';
-import '../widgets/rummy/rummy_table_board.dart';
+import '../widgets/rummy/hand_grouping.dart';
+import '../widgets/rummy/rummy_game_view.dart';
 
-/// Live gameplay table driven by an already-connected [GameWebSocketService].
+/// Adapter: owns WebSocket + [RummyGameState] and feeds a pure [RummyGameView].
 /// Does not open or close the socket — the lobby ([GameTestScreen]) owns that.
 class RummyGameScreen extends StatefulWidget {
   final GameWebSocketService gameWs;
@@ -45,6 +45,11 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   rummy.Card? _finishSlotCard;
   DeclareResultEvent? _lastDeclareResult;
   String? _declareResultName;
+  bool _matchEnded = false;
+  /// Guards against double post-game UI when MATCH_ENDED repeats.
+  bool _matchEndUiShown = false;
+  MatchEndedEvent? _matchEndedEvent;
+  ScoreUpdateEvent? _lastScoreUpdate;
 
   SocketConnectionState _connectionState = SocketConnectionState.disconnected;
   int _turnSecondsLeft = _turnTimeoutSeconds;
@@ -79,11 +84,43 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     super.dispose();
   }
 
+  RummyGameUiMode get _uiMode {
+    if (_connectionState != SocketConnectionState.connected) {
+      return RummyGameUiMode.disconnected;
+    }
+    if (_matchEnded || _state.snapshot?.matchStatus == RummyMatchStatus.completed) {
+      return RummyGameUiMode.completed;
+    }
+    if (_state.snapshot == null) {
+      return RummyGameUiMode.waiting;
+    }
+    return RummyGameUiMode.active;
+  }
+
   void _onSocketEvent(GameSocketEvent event) {
     if (!mounted) return;
 
+    // One bad payload must not cancel the subscription — otherwise the
+    // peer can miss MATCH_ENDED and stay stuck on an active-looking table.
+    try {
+      _dispatchSocketEvent(event);
+    } catch (e, st) {
+      assert(() {
+        // ignore: avoid_print
+        print('RummyGameScreen event ${event.type} failed: $e\n$st');
+        return true;
+      }());
+    }
+  }
+
+  void _dispatchSocketEvent(GameSocketEvent event) {
     switch (event.type) {
       case 'DEAL_STARTED':
+        // Ignore stray deal events after the match is already over.
+        if (_matchEnded) return;
+        _matchEnded = false;
+        _matchEndUiShown = false;
+        _matchEndedEvent = null;
         _applyDealJson(event.raw, isFreshDeal: true);
         setState(() {
           _finishSlotCard = null;
@@ -96,21 +133,27 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
       case 'CARD_DRAWN':
       case 'CARD_DISCARDED':
       case 'PLAYER_DROPPED':
+        if (_matchEnded) return;
         _applyDealJson(event.raw, isFreshDeal: false);
         break;
       case 'ROOM_STATE':
+        if (_matchEnded) return;
         if (DealSnapshot.hasDealFields(event.raw)) {
           _applyDealJson(event.raw, isFreshDeal: false);
         }
         break;
       case 'DECLARE_RESULT':
+        if (_matchEnded) return;
         _handleDeclareResult(event.raw);
         break;
       case 'SCORE_UPDATE':
-        _showScoreUpdate(ScoreUpdateEvent.fromJson(event.raw));
+        // Keep for the match-result summary; do not block with a mid-flow dialog
+        // (that previously stacked under MATCH_ENDED and left players on the table).
+        _lastScoreUpdate = ScoreUpdateEvent.fromJson(event.raw);
         break;
       case 'MATCH_ENDED':
-        _showMatchEnded(MatchEndedEvent.fromJson(event.raw));
+        // Protocol event name is MATCH_ENDED (not GAME_COMPLETED).
+        _onMatchEnded(MatchEndedEvent.fromJson(event.raw));
         break;
       case 'ERROR':
       case 'CLIENT_ERROR':
@@ -119,6 +162,47 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
         break;
       default:
         break;
+    }
+  }
+
+  /// Match lifecycle end: freeze actions → identical in-tree result overlay
+  /// on every client (Option B). No Navigator dialog / popUntil races.
+  void _onMatchEnded(MatchEndedEvent ended) {
+    if (!mounted) return;
+    _turnTimer?.cancel();
+
+    if (_matchEndUiShown) {
+      setState(() {
+        _matchEnded = true;
+        _matchEndedEvent = ended;
+      });
+      return;
+    }
+    _matchEndUiShown = true;
+
+    // Dismiss Drop/Show confirm sheets only — never pop RummyGameScreen here.
+    _dismissTransientDialogs();
+
+    setState(() {
+      _matchEnded = true;
+      _matchEndedEvent = ended;
+      _selectedIndex = null;
+    });
+  }
+
+  void _dismissTransientDialogs() {
+    final nav = Navigator.of(context, rootNavigator: true);
+    // Pop overlay routes (dialogs) until the table PageRoute is on top.
+    nav.popUntil((route) => route is PageRoute);
+  }
+
+  /// Room is COMPLETED after MATCH_ENDED — Play Again / Leave both return
+  /// to the lobby so the player can create or join a fresh table.
+  void _returnToLobby() {
+    if (!mounted) return;
+    _dismissTransientDialogs();
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
     }
   }
 
@@ -189,59 +273,20 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     });
   }
 
-  void _showScoreUpdate(ScoreUpdateEvent update) {
-    final lines = update.scores
-        .map((s) => '${s.username}: +${s.roundPoints} (total ${s.cumulativeScore})')
-        .join('\n');
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: RummyColors.panelBg,
-        title: Text(
-          'Deal ${update.dealNumber ?? ''} scores',
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: Text(lines.isEmpty ? 'No scores' : lines, style: const TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-        ],
-      ),
-    );
-  }
-
-  void _showMatchEnded(MatchEndedEvent ended) {
-    final winnerName = _nameFor(ended.winnerUserId) ?? 'Player ${ended.winnerUserId}';
-    final scores = ended.finalScores.entries
-        .map((e) => '${_nameFor(e.key) ?? e.key}: ${e.value}')
-        .join('\n');
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: RummyColors.panelBg,
-        title: const Text('Match ended', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Winner: $winnerName\n\n$scores',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
-            },
-            child: const Text('Back to lobby'),
-          ),
-        ],
-      ),
-    );
-  }
-
   String? _nameFor(int? userId) {
     if (userId == null) return null;
     for (final p in _state.snapshot?.players ?? const <PlayerView>[]) {
       if (p.userId == userId) return p.username;
     }
     return null;
+  }
+
+  String? _lastDealScoreLines() {
+    final pending = _lastScoreUpdate;
+    if (pending == null || pending.scores.isEmpty) return null;
+    return pending.scores
+        .map((s) => '${s.username}: +${s.roundPoints} (total ${s.cumulativeScore})')
+        .join('\n');
   }
 
   void _snack(String message) {
@@ -251,9 +296,8 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     );
   }
 
-  // ---- Actions (phase-gated) ----
-
   void _draw(bool fromClosed) {
+    if (_matchEnded) return;
     if (!_state.canDraw) {
       _snack(_state.isMyTurn ? 'Finish your discard first' : 'Not your turn');
       return;
@@ -262,6 +306,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   void _discardAt(int? index) {
+    if (_matchEnded) return;
     if (!_state.canDiscardOrDeclare) {
       _snack(_state.isMyTurn ? 'Draw a card first' : 'Not your turn');
       return;
@@ -273,10 +318,17 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     }
     final card = hand[index];
     widget.gameWs.discardCard(card.code);
-    setState(() => _selectedIndex = null);
+    setState(() {
+      final next = HandGrouping.afterRemove(_groupBreaks, index, hand.length - 1);
+      _groupBreaks
+        ..clear()
+        ..addAll(next);
+      _selectedIndex = null;
+    });
   }
 
   void _confirmDrop() {
+    if (_matchEnded) return;
     if (!_state.canDrop) {
       _snack('Drop is only available before you draw');
       return;
@@ -306,6 +358,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   void _openDeclare() {
+    if (_matchEnded) return;
     if (!_state.canDiscardOrDeclare) {
       _snack(_state.isMyTurn ? 'Draw a card first' : 'Not your turn');
       return;
@@ -351,11 +404,15 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     final hand = List<rummy.Card>.from(_state.myHandArrangement);
     if (fromIndex == toIndex || fromIndex < 0 || fromIndex >= hand.length) return;
     var target = toIndex.clamp(0, hand.length - 1);
+    final before = Set<int>.from(_groupBreaks);
     final card = hand.removeAt(fromIndex);
     if (fromIndex < target) target -= 1;
     hand.insert(target, card);
     setState(() {
       _state.reorderHand(hand);
+      _groupBreaks
+        ..clear()
+        ..addAll(HandGrouping.afterMove(before, fromIndex, target, hand.length));
       _selectedIndex = target;
     });
   }
@@ -366,10 +423,14 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     var insertAt = gapAfterIndex + 1;
     if (fromIndex < insertAt) insertAt -= 1;
     insertAt = insertAt.clamp(0, hand.length - 1);
+    final before = Set<int>.from(_groupBreaks);
     final card = hand.removeAt(fromIndex);
     hand.insert(insertAt, card);
     setState(() {
       _state.reorderHand(hand);
+      _groupBreaks
+        ..clear()
+        ..addAll(HandGrouping.afterMove(before, fromIndex, insertAt, hand.length));
       _selectedIndex = insertAt;
     });
   }
@@ -415,254 +476,88 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
           handSize: _state.myHandArrangement.length,
         );
     final hand = _state.myHandArrangement;
-    final isMyTurn = _state.isMyTurn;
     final phase = snap?.turnPhase;
-    final dealLabel = snap?.dealNumber != null ? 'Deal ${snap!.dealNumber}' : 'Waiting for deal';
-    final connected = _connectionState == SocketConnectionState.connected;
+    final dealLabel = _matchEnded
+        ? 'Match completed'
+        : (snap?.dealNumber != null ? 'Deal ${snap!.dealNumber}' : 'Waiting for deal');
+    final canAct = !_matchEnded;
+    final canDraw = canAct && _state.canDraw;
+    final canDiscard = canAct && _state.canDiscardOrDeclare;
 
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: RummyColors.boardGradient),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _topBar(dealLabel, connected),
-              if (snap == null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Text(
-                    'Waiting for DEAL_STARTED…',
-                    style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 11),
-                  ),
-                ),
-              Expanded(
-                child: RummyTableBoard(
-                  opponents: _state.opponents,
-                  me: me,
-                  hand: hand,
-                  wildValue: snap?.wildValue,
-                  cutJokerCard: snap?.cutJokerCard,
-                  closedDeckCount: snap?.closedDeckCount ?? 0,
-                  discardTop: snap?.discardTop,
-                  finishSlotCard: _finishSlotCard,
-                  phase: phase,
-                  currentTurnUserId: snap?.currentTurnUserId,
-                  turnSecondsRemaining: _turnSecondsLeft,
-                  layout: _layout,
-                  selectedIndex: _selectedIndex,
-                  groupBreaksAfterIndex: _groupBreaks,
-                  declareResult: _lastDeclareResult,
-                  declareResultName: _declareResultName,
-                  onCloseDeclareResult: () => setState(() => _lastDeclareResult = null),
-                  onCardTap: (index, card) {
-                    setState(() => _selectedIndex = _selectedIndex == index ? null : index);
-                  },
-                  onToggleGroupBreak: (index) => setState(() {
-                    if (_groupBreaks.contains(index)) {
-                      _groupBreaks.remove(index);
-                    } else {
-                      _groupBreaks.add(index);
-                    }
-                  }),
-                  onMoveCard: _moveCard,
-                  onMoveIntoGap: _moveIntoGap,
-                  onAcceptFromPile: _state.canDraw ? _draw : null,
-                  onDrawClosed: _state.canDraw ? () => _draw(true) : null,
-                  onDrawOpen: _state.canDraw ? () => _draw(false) : null,
-                  onDiscardDrop: _state.canDiscardOrDeclare
-                      ? (payload) => _discardAt(payload.handIndex)
-                      : null,
-                  onFinishDrop: _state.canDiscardOrDeclare
-                      ? (payload) {
-                          setState(() => _selectedIndex = payload.handIndex);
-                          _openDeclare();
-                        }
-                      : null,
-                ),
-              ),
-              if (_selectedIndex != null) _selectedCardTools(hand),
-              _footerActions(me, isMyTurn, phase),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _topBar(String dealLabel, bool connected) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 10, 4),
-      child: Row(
-        children: [
-          Material(
-            color: Colors.black.withOpacity(0.4),
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              onTap: _confirmExit,
-              borderRadius: BorderRadius.circular(10),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.logout_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 5),
-                    Text(
-                      'EXIT',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: RummyColors.headerPill.withOpacity(0.92),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      'Points Rummy   ·   #${widget.roomCode}   ·   $dealLabel',
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.signal_cellular_alt,
-                    color: connected ? RummyColors.success : RummyColors.danger,
-                    size: 16,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _footerActions(PlayerView me, bool isMyTurn, RummyTurnPhase? phase) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Text(
-            'SCORE: ${me.cumulativeScore}',
-            style: const TextStyle(color: RummyColors.gold, fontWeight: FontWeight.w700, fontSize: 12),
-          ),
-          const SizedBox(width: 16),
-          RummyActionBar(
-            isMyTurn: isMyTurn,
-            phase: phase,
-            onDrop: _confirmDrop,
-            onDeclare: _openDeclare,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _selectedCardTools(List<rummy.Card> hand) {
-    final i = _selectedIndex!;
-    final canLeft = i > 0;
-    final canRight = i < hand.length - 1;
-    final splitActive = i < hand.length - 1 && _groupBreaks.contains(i);
-    final canDiscard = _state.canDiscardOrDeclare;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _toolChip(
-            icon: Icons.chevron_left_rounded,
-            label: 'Left',
-            enabled: canLeft,
-            onTap: canLeft ? () => _nudgeSelected(-1) : null,
-          ),
-          const SizedBox(width: 8),
-          _toolChip(
-            icon: Icons.view_column_rounded,
-            label: splitActive ? 'Merge' : 'Split',
-            enabled: canRight,
-            active: splitActive,
-            onTap: canRight
-                ? () => setState(() {
-                      if (_groupBreaks.contains(i)) {
-                        _groupBreaks.remove(i);
-                      } else {
-                        _groupBreaks.add(i);
-                      }
-                    })
-                : null,
-          ),
-          const SizedBox(width: 8),
-          _toolChip(
-            icon: Icons.chevron_right_rounded,
-            label: 'Right',
-            enabled: canRight,
-            onTap: canRight ? () => _nudgeSelected(1) : null,
-          ),
-          if (canDiscard) ...[
-            const SizedBox(width: 8),
-            _toolChip(
-              icon: Icons.upload_rounded,
-              label: 'Discard',
-              enabled: true,
-              onTap: () => _discardAt(i),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _toolChip({
-    required IconData icon,
-    required String label,
-    required bool enabled,
-    bool active = false,
-    VoidCallback? onTap,
-  }) {
-    return Material(
-      color: active ? RummyColors.gold.withOpacity(0.25) : Colors.white.withOpacity(enabled ? 0.1 : 0.04),
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 18, color: enabled ? (active ? RummyColors.gold : Colors.white) : Colors.white30),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: enabled ? (active ? RummyColors.gold : Colors.white70) : Colors.white30,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return RummyGameView(
+      mode: _uiMode,
+      headerLabel: 'Points Rummy   ·   #${widget.roomCode}   ·   $dealLabel',
+      layout: _layout,
+      opponents: _state.opponents,
+      me: me,
+      hand: hand,
+      wildValue: snap?.wildValue,
+      cutJokerCard: snap?.cutJokerCard,
+      closedDeckCount: snap?.closedDeckCount ?? 0,
+      discardTop: snap?.discardTop,
+      finishSlotCard: _finishSlotCard,
+      phase: phase,
+      currentTurnUserId: snap?.currentTurnUserId,
+      turnSecondsRemaining: _matchEnded ? null : _turnSecondsLeft,
+      selectedIndex: _selectedIndex,
+      groupBreaksAfterIndex: _groupBreaks,
+      declareResult: _lastDeclareResult,
+      declareResultName: _declareResultName,
+      isMyTurn: canAct && _state.isMyTurn,
+      canDiscardSelected: canDiscard,
+      matchResult: _matchEndedEvent,
+      matchWinnerName: _nameFor(_matchEndedEvent?.winnerUserId),
+      lastDealScoreLines: _lastDealScoreLines(),
+      playerNames: {
+        for (final p in snap?.players ?? const <PlayerView>[]) p.userId: p.username,
+        for (final s in _lastScoreUpdate?.scores ?? const <ScoreRow>[]) s.userId: s.username,
+      },
+      onPlayAgain: _returnToLobby,
+      onLeaveTable: _returnToLobby,
+      onExit: _matchEnded ? _returnToLobby : _confirmExit,
+      onCloseDeclareResult: () => setState(() => _lastDeclareResult = null),
+      onCardTap: canAct
+          ? (index, card) {
+              setState(() => _selectedIndex = _selectedIndex == index ? null : index);
+            }
+          : null,
+      onToggleGroupBreak: canAct
+          ? (index) => setState(() {
+                final next = HandGrouping.toggleBreak(_groupBreaks, index, _state.myHandArrangement.length);
+                _groupBreaks
+                  ..clear()
+                  ..addAll(next);
+              })
+          : null,
+      onMoveCard: canAct ? _moveCard : null,
+      onMoveIntoGap: canAct ? _moveIntoGap : null,
+      onAcceptFromPile: canDraw ? _draw : null,
+      onDrawClosed: canDraw ? () => _draw(true) : null,
+      onDrawOpen: canDraw ? () => _draw(false) : null,
+      onDiscardDrop: canDiscard ? (payload) => _discardAt(payload.handIndex) : null,
+      onFinishDrop: canDiscard
+          ? (payload) {
+              setState(() => _selectedIndex = payload.handIndex);
+              _openDeclare();
+            }
+          : null,
+      onDrop: canAct ? _confirmDrop : null,
+      onDeclare: canAct ? _openDeclare : null,
+      onNudgeLeft: canAct ? () => _nudgeSelected(-1) : null,
+      onNudgeRight: canAct ? () => _nudgeSelected(1) : null,
+      onToggleSplit: canAct
+          ? () {
+              final i = _selectedIndex;
+              if (i == null) return;
+              setState(() {
+                final next = HandGrouping.toggleBreak(_groupBreaks, i, _state.myHandArrangement.length);
+                _groupBreaks
+                  ..clear()
+                  ..addAll(next);
+              });
+            }
+          : null,
+      onDiscardSelected: canDiscard ? () => _discardAt(_selectedIndex) : null,
     );
   }
 }

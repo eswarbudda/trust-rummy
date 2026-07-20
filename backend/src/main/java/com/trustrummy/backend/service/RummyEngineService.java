@@ -286,8 +286,22 @@ public class RummyEngineService implements GameEngine {
         boolean pointsVariant = match.getConfig().getGameVariant() == GameVariant.POINTS;
         List<Long> stillActive = match.activeMatchPlayerIds();
 
-        if (pointsVariant || stillActive.size() <= 1) {
-            Long matchWinner = pointsVariant ? winnerUserId : (stillActive.isEmpty() ? null : stillActive.get(0));
+        // Heads-up walkover: when exactly two seats started and this deal
+        // ended because someone DROPped/forfeited (leaving one PLAYING),
+        // the remaining player wins the match — stakes settle via finishMatch.
+        long droppedThisDeal = deal.getTurnOrder().stream()
+                .filter(id -> deal.getRoundStatus().get(id) == RoundStatus.DROPPED)
+                .count();
+        boolean headsUpDropWalkover = match.getSeatOrder().size() == 2
+                && !wrongDeclareVoid
+                && winnerUserId != null
+                && droppedThisDeal >= 1
+                && deal.activePlayerIds().size() <= 1;
+
+        if (pointsVariant || stillActive.size() <= 1 || headsUpDropWalkover) {
+            Long matchWinner = (pointsVariant || headsUpDropWalkover)
+                    ? winnerUserId
+                    : (stillActive.isEmpty() ? null : stillActive.get(0));
             finishMatch(match, matchWinner);
         } else {
             startNewDeal(match);
