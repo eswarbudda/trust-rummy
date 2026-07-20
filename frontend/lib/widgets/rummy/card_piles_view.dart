@@ -6,11 +6,16 @@ import '../../theme/rummy_layout.dart';
 import 'hand_view.dart';
 import 'playing_card_view.dart';
 
-/// Center piles: closed deck (+ cut joker under it), discard bundle, finish slot.
+/// Center piles: closed deck (+ cut joker under it), discard / open deck, finish slot.
 /// Deck / discard can be tapped or dragged onto the hand to draw.
+///
+/// Pass [discardPile] (mock: full history, oldest → newest) or [discardTop]
+/// (live: single open card from the server snapshot). When both are set,
+/// [discardPile] wins for the multi-card bundle look.
 class CardPilesView extends StatelessWidget {
   final int closedDeckCount;
-  final List<rummy.Card> discardPile;
+  final List<rummy.Card>? discardPile;
+  final rummy.Card? discardTop;
   final rummy.Card? cutJokerCard;
   final rummy.Value? wildValue;
   final rummy.Card? finishSlotCard;
@@ -24,8 +29,9 @@ class CardPilesView extends StatelessWidget {
   const CardPilesView({
     super.key,
     required this.closedDeckCount,
-    required this.discardPile,
     required this.wildValue,
+    this.discardPile,
+    this.discardTop,
     this.cutJokerCard,
     this.finishSlotCard,
     this.layout = RummyLayout.standard,
@@ -34,6 +40,14 @@ class CardPilesView extends StatelessWidget {
     this.onDiscardDrop,
     this.onFinishDrop,
   });
+
+  rummy.Card? get _openTop {
+    final pile = discardPile;
+    if (pile != null && pile.isNotEmpty) return pile.last;
+    return discardTop;
+  }
+
+  bool get _hasOpenCard => _openTop != null;
 
   // Match hand card proportions so open/discard faces read like your cards.
   double get _w => layout.cardWidth;
@@ -172,17 +186,18 @@ class CardPilesView extends StatelessWidget {
 
   Widget _discardSlot() {
     final pile = _discardBundle();
-    final canDraw = onDrawOpen != null && discardPile.isNotEmpty;
+    final top = _openTop;
+    final canDraw = onDrawOpen != null && _hasOpenCard;
     final canReceiveDiscard = onDiscardDrop != null;
 
     Widget labeled = _labeledPile(
       pile,
-      canDraw ? 'OPEN DECK' : 'OPEN DECK',
+      'OPEN DECK',
       canDraw || canReceiveDiscard ? Colors.white70 : Colors.white54,
       highlight: canDraw,
     );
 
-    if (canDraw) {
+    if (canDraw && top != null) {
       labeled = Draggable<PileDragPayload>(
         data: const PileDragPayload(fromClosed: false),
         maxSimultaneousDrags: 1,
@@ -190,8 +205,8 @@ class CardPilesView extends StatelessWidget {
           color: Colors.transparent,
           elevation: 10,
           child: PlayingCardView(
-            card: discardPile.last,
-            isWild: discardPile.last.isWildFor(wildValue),
+            card: top,
+            isWild: top.isWildFor(wildValue),
             width: _w,
             height: _h,
           ),
@@ -244,61 +259,71 @@ class CardPilesView extends StatelessWidget {
   }
 
   Widget _discardBundle() {
-    if (discardPile.isEmpty) {
-      return Container(
-        width: _w,
-        height: _h,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.28),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white24),
+    final pile = discardPile;
+    // Mock: multi-card discard history bundle.
+    if (pile != null && pile.isNotEmpty) {
+      final top = pile.last;
+      final under = pile.length > 1 ? pile.sublist(0, pile.length - 1).reversed.take(3).toList() : <rummy.Card>[];
+      const step = 2.2;
+      final layers = under.length;
+      final boxW = _w + layers * step;
+      final boxH = _h + layers * step;
+
+      return SizedBox(
+        width: boxW,
+        height: boxH,
+        child: Stack(
+          children: [
+            for (var i = 0; i < layers; i++)
+              Positioned(
+                left: i * step,
+                top: i * step,
+                child: Opacity(
+                  opacity: 0.85,
+                  child: PlayingCardView(
+                    card: under[layers - 1 - i],
+                    isWild: under[layers - 1 - i].isWildFor(wildValue),
+                    width: _w,
+                    height: _h,
+                  ),
+                ),
+              ),
+            Positioned(
+              left: layers * step,
+              top: layers * step,
+              child: PlayingCardView(
+                card: top,
+                isWild: top.isWildFor(wildValue),
+                width: _w,
+                height: _h,
+              ),
+            ),
+          ],
         ),
-        child: Icon(Icons.arrow_forward, color: Colors.white.withOpacity(0.45), size: 22),
       );
     }
 
-    final top = discardPile.last;
-    // Show the real previous faces behind the top (same card chrome as the hand).
-    final under = discardPile.length > 1
-        ? discardPile.sublist(0, discardPile.length - 1).reversed.take(3).toList()
-        : <rummy.Card>[];
-    const step = 2.2;
-    final layers = under.length;
-    final boxW = _w + layers * step;
-    final boxH = _h + layers * step;
+    // Live: single face-up open card at hand size.
+    final top = discardTop;
+    if (top != null) {
+      return PlayingCardView(
+        card: top,
+        isWild: top.isWildFor(wildValue),
+        width: _w,
+        height: _h,
+      );
+    }
 
-    return SizedBox(
-      width: boxW,
-      height: boxH,
-      child: Stack(
-        children: [
-          for (var i = 0; i < layers; i++)
-            Positioned(
-              left: i * step,
-              top: i * step,
-              child: Opacity(
-                opacity: 0.85,
-                child: PlayingCardView(
-                  card: under[layers - 1 - i],
-                  isWild: under[layers - 1 - i].isWildFor(wildValue),
-                  width: _w,
-                  height: _h,
-                ),
-              ),
-            ),
-          Positioned(
-            left: layers * step,
-            top: layers * step,
-            child: PlayingCardView(
-              card: top,
-              isWild: top.isWildFor(wildValue),
-              width: _w,
-              height: _h,
-            ),
-          ),
-        ],
+    return Container(
+      width: _w,
+      height: _h,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.28),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white24),
       ),
+      child: Icon(Icons.arrow_forward, color: Colors.white.withOpacity(0.45), size: 22),
     );
   }
 

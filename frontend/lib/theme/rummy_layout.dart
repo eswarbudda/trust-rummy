@@ -31,8 +31,8 @@ class RummyLayout {
   double get handHeightWithMelds => _s(150);
   double get handEmptyHeight => _s(140);
 
-  /// Room under the hand for the local seat (avatar + name) on the wood rim.
-  double get handBottomInset => _s(78);
+  /// Room under the hand for the local avatar on the wood rim (name sits below).
+  double get handBottomInset => _s(52);
 
   // --- Center piles ---
   double get pileSpacingDeckToDiscard => _s(32);

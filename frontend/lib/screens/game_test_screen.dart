@@ -2,9 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../models/game_state.dart';
 import '../services/auth_api_service.dart';
 import '../services/game_websocket_service.dart';
 import '../services/room_api_service.dart';
+import 'rummy_game_screen.dart';
 
 /// Functional (non-visual) connection-verification tool for the Rummy game
 /// engine WebSocket. Lets us drive `START_MATCH` / `DRAW_CARD` /
@@ -58,6 +60,13 @@ class _GameTestScreenState extends State<GameTestScreen> {
   String? _myUsername;
   int? _currentTurnUserId;
 
+  /// Latest deal-bearing snapshot JSON — seeded into [RummyGameScreen] when
+  /// opening the table mid-deal (or right after `DEAL_STARTED`).
+  Map<String, dynamic>? _lastDealJson;
+
+  /// True while [RummyGameScreen] is on top of this lobby (shared socket).
+  bool _tableOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -88,7 +97,21 @@ class _GameTestScreenState extends State<GameTestScreen> {
         if (turnUserId is int) {
           _currentTurnUserId = turnUserId;
         }
+
+        final isDealEvent = event.type == 'DEAL_STARTED' ||
+            event.type == 'TURN_STATE' ||
+            event.type == 'CARD_DRAWN' ||
+            event.type == 'CARD_DISCARDED' ||
+            event.type == 'PLAYER_DROPPED' ||
+            (event.type == 'ROOM_STATE' && DealSnapshot.hasDealFields(event.raw));
+        if (isDealEvent) {
+          _lastDealJson = Map<String, dynamic>.from(event.raw);
+        }
       });
+
+      if (event.type == 'DEAL_STARTED' && !_tableOpen && mounted) {
+        _openLiveTable();
+      }
     });
     _gameWs.rawStream.listen((raw) {
       setState(() {
@@ -97,6 +120,26 @@ class _GameTestScreenState extends State<GameTestScreen> {
       });
       _scrollToBottom();
     });
+  }
+
+  Future<void> _openLiveTable() async {
+    if (!_connected || _tableOpen) return;
+    final roomCode = _roomCodeController.text.trim();
+    if (roomCode.isEmpty) return;
+
+    _tableOpen = true;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RummyGameScreen(
+          gameWs: _gameWs,
+          roomCode: roomCode,
+          myUserId: _myUserId,
+          myUsername: _myUsername,
+          initialDealJson: _lastDealJson,
+        ),
+      ),
+    );
+    if (mounted) setState(() => _tableOpen = false);
   }
 
   /// Decodes the `sub` (username) claim out of the JWT payload — client-side
@@ -564,6 +607,13 @@ class _GameTestScreenState extends State<GameTestScreen> {
             onPressed: _connected ? _sendStartMatch : null,
             icon: const Icon(Icons.play_arrow),
             label: const Text('Host: Start Match'),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _connected ? _openLiveTable : null,
+            icon: const Icon(Icons.table_restaurant_outlined),
+            label: Text(_lastDealJson != null ? 'Open table (live deal)' : 'Open table'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.teal),
           ),
           const SizedBox(height: 8),
           Row(

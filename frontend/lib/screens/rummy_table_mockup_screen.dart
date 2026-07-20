@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -7,12 +6,9 @@ import '../models/card.dart' as rummy;
 import '../models/game_state.dart';
 import '../theme/rummy_colors.dart';
 import '../theme/rummy_layout.dart';
-import '../widgets/rummy/card_piles_view.dart';
-import '../widgets/rummy/declare_result_panel.dart';
 import '../widgets/rummy/hand_view.dart';
-import '../widgets/rummy/player_seat_view.dart';
 import '../widgets/rummy/rummy_action_bar.dart';
-import '../widgets/rummy/table_surface.dart';
+import '../widgets/rummy/rummy_table_board.dart';
 
 /// Static, non-networked visual mockup of the Rummy gameplay table — built
 /// for a design review before any real `GameWebSocketService` wiring
@@ -154,8 +150,51 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
             children: [
               _topBar(context),
               _previewPhaseSwitch(),
-              // Board fills almost everything — hand + You sit on the felt.
-              Expanded(child: _tableArea()),
+              Expanded(
+                child: RummyTableBoard(
+                  opponents: _opponents,
+                  me: _me,
+                  hand: _hand,
+                  wildValue: _wildValue,
+                  cutJokerCard: _cutJoker,
+                  closedDeckCount: _closedDeckCount,
+                  discardPile: _discardPile,
+                  finishSlotCard: _finishSlotCard,
+                  phase: _previewPhase,
+                  currentTurnUserId: _me.userId,
+                  turnSecondsRemaining: _turnSecondsLeft,
+                  layout: _layout,
+                  selectedIndex: _selectedIndex,
+                  groupBreaksAfterIndex: _groupBreaks,
+                  declareResult: _lastDeclareResult,
+                  declareResultName: 'You',
+                  onCloseDeclareResult: () => setState(() => _lastDeclareResult = null),
+                  onCardTap: (index, card) {
+                    setState(() => _selectedIndex = _selectedIndex == index ? null : index);
+                  },
+                  onToggleGroupBreak: (index) => setState(() {
+                    if (_groupBreaks.contains(index)) {
+                      _groupBreaks.remove(index);
+                    } else {
+                      _groupBreaks.add(index);
+                    }
+                  }),
+                  onMoveCard: _moveCard,
+                  onMoveIntoGap: _moveIntoGap,
+                  onAcceptFromPile: _previewPhase == RummyTurnPhase.awaitingDraw ? _drawFromPile : null,
+                  onDrawClosed: _previewPhase == RummyTurnPhase.awaitingDraw ? () => _drawFromPile(true) : null,
+                  onDrawOpen: _previewPhase == RummyTurnPhase.awaitingDraw ? () => _drawFromPile(false) : null,
+                  onDiscardDrop: _previewPhase == RummyTurnPhase.awaitingDiscard
+                      ? (payload) => _discardCard(payload.handIndex)
+                      : null,
+                  onFinishDrop: _previewPhase == RummyTurnPhase.awaitingDiscard
+                      ? (payload) {
+                          setState(() => _selectedIndex = payload.handIndex);
+                          _openDeclareReview();
+                        }
+                      : null,
+                ),
+              ),
               if (_selectedIndex != null) _selectedCardTools(),
               _footerActions(isMyTurn),
             ],
@@ -324,181 +363,6 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
       labelStyle: TextStyle(color: selected ? Colors.black : Colors.white70),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
-  Widget _tableArea() {
-    final L = _layout;
-    return Padding(
-      padding: L.tablePadding,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Fill the available area for a large board.
-          var width = constraints.maxWidth;
-          var height = constraints.maxHeight;
-          final ratio = width / height;
-          if (ratio > L.tableMaxAspect) {
-            width = height * L.tableMaxAspect;
-          } else if (ratio < L.tableMinAspect) {
-            height = width / L.tableMinAspect;
-          }
-
-          return Center(
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: TableSurface(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    ..._opponentRimSeats(Size(width, height), L),
-                    // Piles higher on the felt so they stay clear of the hand.
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      top: height * 0.24,
-                      height: L.handCardHeight + 40 * L.scale,
-                      child: Center(
-                        child: CardPilesView(
-                          closedDeckCount: _closedDeckCount,
-                          discardPile: _discardPile,
-                          cutJokerCard: _cutJoker,
-                          wildValue: _wildValue,
-                          finishSlotCard: _finishSlotCard,
-                          layout: L,
-                          onDrawClosed: _previewPhase == RummyTurnPhase.awaitingDraw ? () => _drawFromPile(true) : null,
-                          onDrawOpen: _previewPhase == RummyTurnPhase.awaitingDraw ? () => _drawFromPile(false) : null,
-                          onDiscardDrop: _previewPhase == RummyTurnPhase.awaitingDiscard
-                              ? (payload) => _discardCard(payload.handIndex)
-                              : null,
-                          onFinishDrop: _previewPhase == RummyTurnPhase.awaitingDiscard
-                              ? (payload) {
-                                  setState(() => _selectedIndex = payload.handIndex);
-                                  _openDeclareReview();
-                                }
-                              : null,
-                        ),
-                      ),
-                    ),
-                    // Hand low on the felt — clear of the piles, above your rim seat.
-                    Positioned(
-                      left: 10,
-                      right: 10,
-                      bottom: L.handBottomInset,
-                      height: L.handHeightWithMelds,
-                      child: HandView(
-                        cards: _hand,
-                        wildValue: _wildValue,
-                        selectedIndex: _selectedIndex,
-                        groupBreaksAfterIndex: _groupBreaks,
-                        layout: L,
-                        onCardTap: (index, card) {
-                          setState(() => _selectedIndex = _selectedIndex == index ? null : index);
-                        },
-                        onToggleGroupBreak: (index) => setState(() {
-                          if (_groupBreaks.contains(index)) {
-                            _groupBreaks.remove(index);
-                          } else {
-                            _groupBreaks.add(index);
-                          }
-                        }),
-                        onMoveCard: _moveCard,
-                        onMoveIntoGap: _moveIntoGap,
-                        onAcceptFromPile: _previewPhase == RummyTurnPhase.awaitingDraw ? _drawFromPile : null,
-                      ),
-                    ),
-                    // You on the wood rim (painted after the hand so it stays visible).
-                    _localRimSeat(Size(width, height), L),
-                    if (_lastDeclareResult != null)
-                      DeclareResultPanel(
-                        declarerName: 'You',
-                        result: _lastDeclareResult!,
-                        onClose: () => setState(() => _lastDeclareResult = null),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  /// Opponents on the upper wood rim.
-  List<Widget> _opponentRimSeats(Size size, RummyLayout layout) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final rx = size.width * 0.49;
-    final ry = size.height * 0.48;
-
-    return [
-      for (var i = 0; i < _opponents.length; i++)
-        _seatAt(
-          cx: cx,
-          cy: cy,
-          rx: rx,
-          ry: ry,
-          angle: math.pi - i * (math.pi / (_opponents.length - 1)),
-          player: _opponents[i],
-          layout: layout,
-          isMe: false,
-        ),
-    ];
-  }
-
-  /// Your avatar on the near wood frame; name sits above it under the hand.
-  Widget _localRimSeat(Size size, RummyLayout layout) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    return _seatAt(
-      cx: cx,
-      cy: cy,
-      rx: size.width * 0.49,
-      ry: size.height * 0.47,
-      angle: -math.pi / 2,
-      player: _me,
-      layout: layout,
-      isMe: true,
-      nameAbove: true,
-    );
-  }
-
-  Widget _seatAt({
-    required double cx,
-    required double cy,
-    required double rx,
-    required double ry,
-    required double angle,
-    required PlayerView player,
-    required RummyLayout layout,
-    required bool isMe,
-    bool nameAbove = false,
-  }) {
-    final x = cx + rx * math.cos(angle);
-    final y = cy - ry * math.sin(angle);
-    final seatW = layout.seatNameplateMaxWidth;
-    final avatarR = layout.seatAvatarSize / 2;
-    // Keep the avatar centered on the rim; name-above hangs into the gap under the hand.
-    final nameBlock = nameAbove ? 34 * layout.scale : 0.0;
-    return Positioned(
-      left: x - seatW / 2,
-      top: y - avatarR - nameBlock,
-      width: seatW,
-      child: IgnorePointer(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: PlayerSeatView(
-            player: player,
-            isCurrentTurn: isMe,
-            isMe: isMe,
-            compact: true,
-            nameAbove: nameAbove,
-            turnSecondsRemaining: isMe ? _turnSecondsLeft : null,
-            layout: layout,
-          ),
-        ),
-      ),
     );
   }
 
