@@ -10,10 +10,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Checked-in regression test for wiring {@code GameRoom.stakeAmount}
- * through {@code WalletService} (see {@code RummyEngineService.collectStakes}
- * / {@code settleStakes}): stakes must be debited from every seated
- * player's wallet the moment a match actually starts, and the whole pot
- * paid to the match winner when it ends — turning the previously
+ * through {@code MatchSettlementService} / {@code WalletService}
+ * (see {@code WalletMatchSettlementService}): stakes must be debited from
+ * every seated player's wallet the moment a match actually starts, and the
+ * whole pot paid to the match winner when it ends — turning the previously
  * display-only {@code stakeAmount} field into a real economic loop.
  */
 class StakeSettlementIntegrationTest extends AbstractGameIntegrationTest {

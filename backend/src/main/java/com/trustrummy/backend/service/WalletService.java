@@ -51,7 +51,7 @@ public class WalletService {
         return walletTransactionRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
     }
 
-    /** Read-only pre-check so {@code RummyEngineService} can reject START_MATCH before debiting anyone. */
+    /** Read-only pre-check so stake collection can reject START_MATCH before debiting anyone. */
     public boolean hasSufficientBalance(Long userId, BigDecimal amount) {
         return userRepository.findById(userId)
                 .map(user -> user.getWalletBalance().compareTo(amount) >= 0)
