@@ -60,6 +60,7 @@ class RoomApiService {
     int maxPlayers = 2,
     double stakeAmount = 0,
     String gameVariant = 'POOL_101',
+    /// Only meaningful for DEALS; ignored by the server for POINTS and pool.
     int? dealsPerMatch,
   }) async {
     final body = <String, dynamic>{

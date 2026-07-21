@@ -225,8 +225,7 @@ class _GameTestScreenState extends State<GameTestScreen> {
         if (_tokenController.text.isEmpty) {
           throw Exception('Quick-register (or paste a JWT) first');
         }
-        final dealsPerMatch =
-            (_selectedVariant == 'POINTS' || _selectedVariant == 'DEALS') ? 2 : null;
+        final dealsPerMatch = _selectedVariant == 'DEALS' ? 2 : null;
         final room = await _roomApi.createRoom(
           jwt: _tokenController.text,
           gameVariant: _selectedVariant,
@@ -565,14 +564,18 @@ class _GameTestScreenState extends State<GameTestScreen> {
               ),
               child: Text(
                 'Room variant: $_variantLabel (${_roomVariant!})'
-                '${_selectedVariant == 'POINTS' || _selectedVariant == 'DEALS' || _roomVariant == 'POINTS' || _roomVariant == 'DEALS' ? ' · 2 deals' : ''}',
+                '${_roomVariant == 'DEALS' ? ' · 2 deals' : ''}'
+                '${_roomVariant == 'POINTS' ? ' · 1 deal' : ''}',
                 style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.w600, fontSize: 13),
               ),
             ),
           ] else ...[
             const SizedBox(height: 6),
             Text(
-              'Selected: $_variantLabel — tap Create Room to use it.',
+              'Selected: $_variantLabel'
+              '${_selectedVariant == 'DEALS' ? ' · 2 deals' : ''}'
+              '${_selectedVariant == 'POINTS' ? ' · 1 deal' : ''}'
+              ' — tap Create Room to use it.',
               style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ],
