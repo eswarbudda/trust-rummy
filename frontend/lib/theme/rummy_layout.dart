@@ -6,6 +6,9 @@ import 'rummy_colors.dart';
 ///
 /// Pass [scale] (or use [scaled]) to grow/shrink the whole table UI without
 /// hunting magic numbers across widgets. Defaults match the approved mockup.
+///
+/// Chrome outside the felt: [headerMinHeight] + [bottomLaneHeight].
+/// The Table Area is [Expanded] and consumes all remaining space.
 class RummyLayout {
   final double scale;
 
@@ -22,19 +25,42 @@ class RummyLayout {
   double get cardHeight => _s(104);
   double get handCardHeight => _s(102);
 
-  // --- Hand fan ---
+  // --- Hand fan (width-first; advance clamped for overlap, never scale cards) ---
+  /// Minimum left-edge advance between overlapping cards.
   double get handSlotMin => _s(44);
-  double get handSlotMax => _s(58);
+  /// Soft gap when cards sit side-by-side without overlap.
   double get handSoftGap => _s(3);
   double get handMeldGap => _s(20);
-  /// Preferred hand band height; actual render may scale down via FittedBox
-  /// when the local player column is short (avoids bottom overflow).
-  double get handHeightPlain => _s(140);
-  double get handHeightWithMelds => _s(150);
-  double get handEmptyHeight => _s(140);
+  /// Fixed hand-strip height inside the table (includes selection lift budget).
+  double get handHeightPlain => _s(128);
+  double get handHeightWithMelds => _s(148);
+  double get handEmptyHeight => _s(128);
 
-  /// Legacy inset; local seat no longer overlaps the hand in the board Column.
-  double get handBottomInset => _s(8);
+  // --- Local seat band inside the felt (below the hand, on the oval rim) ---
+  double get localSeatBandHeight => _s(108);
+
+  // --- Reserved chrome outside the felt ---
+  double get headerMinHeight => _s(52);
+  /// Group controls + DRAW/DISCARD + DROP/SHOW share one lane under the table.
+  double get bottomLaneHeight => _s(60);
+  /// Outer inset that pulls action clusters toward the group controls.
+  double get bottomLaneSideInset => _s(28);
+  /// Space between an action cluster and the center group-controls slot.
+  double get bottomLaneActionToGroupGap => _s(16);
+  /// Gap between paired action buttons (DRAW↔DISCARD, DROP↔SHOW).
+  double get actionButtonGap => _s(18);
+  /// Compact action-button metrics (DRAW / DISCARD / DROP / SHOW).
+  double get actionButtonMinWidth => _s(78);
+  double get actionButtonHeight => _s(34);
+  double get actionButtonRadius => _s(8);
+  double get actionButtonFontSize => _s(12);
+  double get actionButtonHPad => _s(12);
+  /// Gap between Left / Create Group / Right chips.
+  double get groupControlGap => _s(10);
+
+  /// Vertical bias for center piles inside the upper felt (0 = center, 1 = bottom).
+  /// Positive values push Deck / Open / Finish toward the visual middle of the oval.
+  double get pileAlignY => 0.42;
 
   // --- Center piles ---
   double get pileSpacingDeckToDiscard => _s(32);
@@ -50,12 +76,11 @@ class RummyLayout {
   double get seatTimerStroke => _s(3.2);
 
   // --- Table chrome ---
-  EdgeInsets get tablePadding => EdgeInsets.fromLTRB(_s(4), _s(2), _s(4), _s(2));
-  /// Prefer filling the viewport — only clamp extreme ultrawide / tall shapes.
-  double get tableMaxAspect => 2.2;
-  double get tableMinAspect => 0.65;
+  /// Fraction of available width inset on each horizontal side of the felt (8% L/R).
+  double get tableHorizontalInsetFraction => 0.08;
+  EdgeInsets get tableVerticalPadding => EdgeInsets.symmetric(vertical: _s(2));
 
-  // --- Meld tray (valid set / sequence only) ---
+  // --- Meld tray (only after the player creates groups) ---
   Color get meldTrayFill => const Color(0xFFDDF5E0);
   Color get meldTrayBorder => RummyColors.success;
   double get meldTrayRadius => _s(14);

@@ -19,9 +19,11 @@ enum RummyGameUiMode {
   disconnected,
 }
 
-/// Pure presentation shell for the rummy table: header, status banner,
-/// [RummyTableBoard], selection tools, footer actions, and optional
-/// post-match result overlay.
+/// Pure presentation shell for the rummy table.
+///
+/// Zone Column (top → bottom):
+/// Header → Table Area (felt + seats + piles + hand) → Bottom Lane
+/// (DRAW/DISCARD · group controls · DROP/SHOW on one row).
 ///
 /// No networking, no services, no mutable game state.
 class RummyGameView extends StatelessWidget {
@@ -147,6 +149,7 @@ class RummyGameView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final L = layout;
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(gradient: RummyColors.boardGradient),
@@ -155,7 +158,11 @@ class RummyGameView extends StatelessWidget {
             children: [
               Column(
                 children: [
-                  _topBar(),
+                  SizedBox(
+                    height: L.headerMinHeight,
+                    width: double.infinity,
+                    child: _topBar(),
+                  ),
                   if (belowHeader != null) belowHeader!,
                   if (_statusBanner != null)
                     Padding(
@@ -170,6 +177,7 @@ class RummyGameView extends StatelessWidget {
                         ),
                       ),
                     ),
+                  // Table Area — felt + all seats + piles + hand.
                   Expanded(
                     child: RummyTableBoard(
                       opponents: opponents,
@@ -199,10 +207,14 @@ class RummyGameView extends StatelessWidget {
                       onDrawOpen: onDrawOpen,
                       onDiscardDrop: onDiscardDrop,
                       onFinishDrop: onFinishDrop,
-                      selectionTools: selectedIndex != null ? _selectedCardTools() : null,
                     ),
                   ),
-                  _footerActions(),
+                  // Bottom lane — DRAW/DISCARD (left) · group tools · DROP/SHOW (right).
+                  SizedBox(
+                    height: L.bottomLaneHeight,
+                    width: double.infinity,
+                    child: _bottomLane(),
+                  ),
                 ],
               ),
               if (mode == RummyGameUiMode.completed && matchResult != null) _matchResultOverlay(),
@@ -215,7 +227,7 @@ class RummyGameView extends StatelessWidget {
 
   Widget _topBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 10, 4),
+      padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
       child: Row(
         children: [
           Material(
@@ -282,25 +294,36 @@ class RummyGameView extends StatelessWidget {
     );
   }
 
-  /// SCORE · DROP · SHOW — spaced for touch, never cramped against seat tools.
-  Widget _footerActions() {
+  Widget _bottomLane() {
+    final L = layout;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      padding: EdgeInsets.fromLTRB(
+        L.bottomLaneSideInset,
+        4 * L.scale,
+        L.bottomLaneSideInset,
+        6 * L.scale,
+      ),
       child: Row(
         children: [
-          Text(
-            'SCORE: ${me.cumulativeScore}',
-            style: TextStyle(
-              color: RummyColors.gold,
-              fontWeight: FontWeight.w800,
-              fontSize: 13 * layout.scale.clamp(0.9, 1.2),
-              letterSpacing: 0.4,
-            ),
-          ),
-          const Spacer(),
-          RummyActionBar(
+          RummyActionBar.drawDiscard(
             isMyTurn: isMyTurn,
             phase: phase,
+            layout: L,
+            canDiscardSelected: canDiscardSelected && selectedIndex != null,
+            onDraw: onDrawClosed,
+            onDiscard: onDiscardSelected,
+          ),
+          SizedBox(width: L.bottomLaneActionToGroupGap),
+          Expanded(
+            child: selectedIndex != null
+                ? Center(child: _selectedCardTools())
+                : const SizedBox.shrink(),
+          ),
+          SizedBox(width: L.bottomLaneActionToGroupGap),
+          RummyActionBar.dropShow(
+            isMyTurn: isMyTurn,
+            phase: phase,
+            layout: L,
             onDrop: onDrop,
             onDeclare: onDeclare,
           ),
@@ -314,12 +337,12 @@ class RummyGameView extends StatelessWidget {
     final canLeft = i > 0;
     final canRight = i < hand.length - 1;
     final splitActive = i < hand.length - 1 && groupBreaksAfterIndex.contains(i);
-    final gap = 14 * layout.scale;
+    final gap = layout.groupControlGap;
 
-    return FittedBox(
-      fit: BoxFit.scaleDown,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           _toolChip(
@@ -343,15 +366,6 @@ class RummyGameView extends StatelessWidget {
             enabled: canRight,
             onTap: canRight ? onNudgeRight : null,
           ),
-          if (canDiscardSelected) ...[
-            SizedBox(width: gap),
-            _toolChip(
-              icon: Icons.upload_rounded,
-              label: 'Discard',
-              enabled: true,
-              onTap: onDiscardSelected,
-            ),
-          ],
         ],
       ),
     );
@@ -371,12 +385,12 @@ class RummyGameView extends StatelessWidget {
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14 * layout.scale, vertical: 9 * layout.scale),
+          padding: EdgeInsets.symmetric(horizontal: 12 * layout.scale, vertical: 8 * layout.scale),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 18, color: enabled ? (active ? RummyColors.gold : Colors.white) : Colors.white30),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               Text(
                 label,
                 style: TextStyle(

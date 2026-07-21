@@ -91,5 +91,6 @@ class HandSegment {
   bool get isFormedMeld =>
       kind == 'SET' || kind == 'SEQUENCE' || kind == 'PURE_SEQUENCE';
 
+  /// Labels/trays only apply once the player has created at least one group break.
   bool get showLabel => cards.length >= 2;
 }

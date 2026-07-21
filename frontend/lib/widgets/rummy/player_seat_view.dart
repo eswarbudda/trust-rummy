@@ -6,7 +6,8 @@ import '../../theme/rummy_layout.dart';
 
 /// Seat chip: circular avatar with a dark name pill.
 /// Opponents keep the name under the avatar; the local seat can flip
-/// [nameAbove] so the label sits in the gap under the hand.
+/// [nameAbove] so the label sits above the avatar when needed.
+/// [showScoreOnPlate] adds SCORE under the username (rim local seat).
 class PlayerSeatView extends StatelessWidget {
   final PlayerView player;
   final bool isCurrentTurn;
@@ -14,9 +15,9 @@ class PlayerSeatView extends StatelessWidget {
   final bool compact;
   final int? turnSecondsRemaining;
   final RummyLayout layout;
-  /// When true, shows "SCORE: n" next to the name (footer "You" chip).
-  final bool showScoreBeside;
-  /// Place the nameplate above the avatar (local seat).
+  /// Place SCORE under the username on the nameplate (local rim seat).
+  final bool showScoreOnPlate;
+  /// Place the nameplate above the avatar.
   final bool nameAbove;
 
   const PlayerSeatView({
@@ -27,13 +28,12 @@ class PlayerSeatView extends StatelessWidget {
     this.compact = false,
     this.turnSecondsRemaining,
     this.layout = RummyLayout.standard,
-    this.showScoreBeside = false,
+    this.showScoreOnPlate = false,
     this.nameAbove = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (showScoreBeside) return _footerYou();
     return _compactSeat();
   }
 
@@ -45,7 +45,7 @@ class PlayerSeatView extends StatelessWidget {
     final urgent = hasTimer && turnSecondsRemaining! <= 5;
     final ringColor = urgent ? RummyColors.danger : RummyColors.success;
     final gap = SizedBox(height: 5 * layout.scale);
-    final avatar = _avatar(avatarSize, hasTimer, progress, ringColor);
+    final avatar = _avatar(avatarSize, hasTimer, progress, ringColor, showSecondsBadge: isMe);
     final plate = _nameplate();
 
     return Column(
@@ -81,6 +81,15 @@ class PlayerSeatView extends StatelessWidget {
               fontSize: 11 * layout.scale,
             ),
           ),
+          if (showScoreOnPlate)
+            Text(
+              'SCORE: ${player.cumulativeScore}',
+              style: TextStyle(
+                color: RummyColors.gold,
+                fontSize: 9 * layout.scale,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           if (status != null)
             Text(
               status,
@@ -92,55 +101,6 @@ class PlayerSeatView extends StatelessWidget {
             ),
         ],
       ),
-    );
-  }
-
-  /// Footer layout: avatar (+ timer) then name / score to the right.
-  Widget _footerYou() {
-    final avatarSize = layout.seatAvatarSize * 1.05;
-    final hasTimer = isCurrentTurn && turnSecondsRemaining != null;
-    const timeout = 30;
-    final progress = hasTimer ? (turnSecondsRemaining!.clamp(0, timeout) / timeout) : 1.0;
-    final urgent = hasTimer && turnSecondsRemaining! <= 5;
-    final ringColor = urgent ? RummyColors.danger : RummyColors.success;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _avatar(avatarSize, hasTimer, progress, ringColor, showSecondsBadge: true),
-        SizedBox(width: 10 * layout.scale),
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 12 * layout.scale, vertical: 6 * layout.scale),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.45),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                player.username,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14 * layout.scale,
-                ),
-              ),
-              Text(
-                'SCORE: ${player.cumulativeScore}',
-                style: TextStyle(
-                  color: RummyColors.gold,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11 * layout.scale,
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 

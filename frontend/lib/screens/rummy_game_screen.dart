@@ -33,7 +33,7 @@ class RummyGameScreen extends StatefulWidget {
 }
 
 class _RummyGameScreenState extends State<RummyGameScreen> {
-  static const RummyLayout _layout = RummyLayout(scale: 1.15);
+  static const RummyLayout _layout = RummyLayout(scale: 1.0);
   static const int _turnTimeoutSeconds = 30;
 
   final RummyGameState _state = RummyGameState();

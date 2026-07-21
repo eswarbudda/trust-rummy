@@ -11,9 +11,11 @@ import 'hand_view.dart';
 import 'player_seat_view.dart';
 import 'table_surface.dart';
 
-/// Felt board: opponent rim seats + center piles in the upper region,
-/// then a dedicated local column (hand → name → avatar) that never
-/// competes with [Positioned] overlays for the same vertical space.
+/// Felt board: opponent rim seats, local seat on the bottom rim, center piles,
+/// and the local hand strip along the bottom inner border.
+///
+/// Group controls and DROP/SHOW live outside this widget in [RummyGameView]'s
+/// bottom lane.
 class RummyTableBoard extends StatelessWidget {
   final List<PlayerView> opponents;
   final PlayerView me;
@@ -49,9 +51,6 @@ class RummyTableBoard extends StatelessWidget {
   final ValueChanged<HandDragPayload>? onDiscardDrop;
   final ValueChanged<HandDragPayload>? onFinishDrop;
 
-  /// Selection tools (Left / Create Group / Right) rendered under the seat.
-  final Widget? selectionTools;
-
   const RummyTableBoard({
     super.key,
     required this.opponents,
@@ -81,35 +80,32 @@ class RummyTableBoard extends StatelessWidget {
     this.onDrawOpen,
     this.onDiscardDrop,
     this.onFinishDrop,
-    this.selectionTools,
   });
+
+  bool get _isMyTurn => currentTurnUserId != null && me.userId == currentTurnUserId;
+
+  double get _handStripHeight {
+    final L = layout;
+    if (hand.isEmpty) return L.handEmptyHeight;
+    return groupBreaksAfterIndex.isNotEmpty ? L.handHeightWithMelds : L.handHeightPlain;
+  }
 
   @override
   Widget build(BuildContext context) {
     final L = layout;
     return Padding(
-      padding: L.tablePadding,
+      padding: L.tableVerticalPadding,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          var width = constraints.maxWidth;
-          var height = constraints.maxHeight;
-          final ratio = width / height;
-          if (ratio > L.tableMaxAspect) {
-            width = height * L.tableMaxAspect;
-          } else if (ratio < L.tableMinAspect) {
-            height = width / L.tableMinAspect;
-          }
-
-          return Center(
-            child: SizedBox(
-              width: width,
-              height: height,
+          final sideInset = constraints.maxWidth * L.tableHorizontalInsetFraction;
+          return Padding(
+            padding: EdgeInsets.symmetric(horizontal: sideInset),
+            child: SizedBox.expand(
               child: TableSurface(
                 child: Column(
                   children: [
-                    // Opponents + piles — takes remaining space above the local zone.
+                    // Opponents + piles — all remaining felt above the hand / local seat.
                     Expanded(
-                      flex: 5,
                       child: LayoutBuilder(
                         builder: (context, pileConstraints) {
                           final pileSize = Size(pileConstraints.maxWidth, pileConstraints.maxHeight);
@@ -117,22 +113,21 @@ class RummyTableBoard extends StatelessWidget {
                             clipBehavior: Clip.none,
                             children: [
                               ..._opponentRimSeats(pileSize, L),
-                              Center(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: CardPilesView(
-                                    closedDeckCount: closedDeckCount,
-                                    discardPile: discardPile,
-                                    discardTop: discardTop,
-                                    cutJokerCard: cutJokerCard,
-                                    wildValue: wildValue,
-                                    finishSlotCard: finishSlotCard,
-                                    layout: L,
-                                    onDrawClosed: onDrawClosed,
-                                    onDrawOpen: onDrawOpen,
-                                    onDiscardDrop: onDiscardDrop,
-                                    onFinishDrop: onFinishDrop,
-                                  ),
+                              // Bias piles downward so they sit nearer the visual middle of the oval.
+                              Align(
+                                alignment: Alignment(0, L.pileAlignY),
+                                child: CardPilesView(
+                                  closedDeckCount: closedDeckCount,
+                                  discardPile: discardPile,
+                                  discardTop: discardTop,
+                                  cutJokerCard: cutJokerCard,
+                                  wildValue: wildValue,
+                                  finishSlotCard: finishSlotCard,
+                                  layout: L,
+                                  onDrawClosed: onDrawClosed,
+                                  onDrawOpen: onDrawOpen,
+                                  onDiscardDrop: onDiscardDrop,
+                                  onFinishDrop: onFinishDrop,
                                 ),
                               ),
                               if (declareResult != null)
@@ -146,57 +141,37 @@ class RummyTableBoard extends StatelessWidget {
                         },
                       ),
                     ),
-                    // Local zone: hand → username → avatar → tools (no Stack overlap).
-                    Expanded(
-                      flex: 4,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8 * L.scale),
-                        child: Column(
-                          children: [
-                            Expanded(
-                              child: Align(
-                                alignment: Alignment.bottomCenter,
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.bottomCenter,
-                                  child: SizedBox(
-                                    width: width - 16 * L.scale,
-                                    height: L.handHeightWithMelds,
-                                    child: HandView(
-                                      cards: hand,
-                                      wildValue: wildValue,
-                                      selectedIndex: selectedIndex,
-                                      groupBreaksAfterIndex: groupBreaksAfterIndex,
-                                      layout: L,
-                                      onCardTap: onCardTap,
-                                      onToggleGroupBreak: onToggleGroupBreak,
-                                      onMoveCard: onMoveCard,
-                                      onMoveIntoGap: onMoveIntoGap,
-                                      onAcceptFromPile: onAcceptFromPile,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: 6 * L.scale),
-                            PlayerSeatView(
-                              player: me,
-                              isCurrentTurn: currentTurnUserId != null && me.userId == currentTurnUserId,
-                              isMe: true,
-                              compact: true,
-                              nameAbove: true,
-                              turnSecondsRemaining:
-                                  (currentTurnUserId != null && me.userId == currentTurnUserId)
-                                      ? turnSecondsRemaining
-                                      : null,
-                              layout: L,
-                            ),
-                            if (selectionTools != null) ...[
-                              SizedBox(height: 10 * L.scale),
-                              selectionTools!,
-                            ],
-                            SizedBox(height: 4 * L.scale),
-                          ],
+                    // Hand along the bottom inner border — fixed height, no scale-down.
+                    SizedBox(
+                      height: _handStripHeight,
+                      width: double.infinity,
+                      child: HandView(
+                        cards: hand,
+                        wildValue: wildValue,
+                        selectedIndex: selectedIndex,
+                        groupBreaksAfterIndex: groupBreaksAfterIndex,
+                        layout: L,
+                        onCardTap: onCardTap,
+                        onToggleGroupBreak: onToggleGroupBreak,
+                        onMoveCard: onMoveCard,
+                        onMoveIntoGap: onMoveIntoGap,
+                        onAcceptFromPile: onAcceptFromPile,
+                      ),
+                    ),
+                    // Local seat on the bottom rim of the oval (same chip style as opponents).
+                    SizedBox(
+                      height: L.localSeatBandHeight,
+                      width: double.infinity,
+                      child: Center(
+                        child: PlayerSeatView(
+                          player: me,
+                          isCurrentTurn: _isMyTurn,
+                          isMe: true,
+                          compact: true,
+                          nameAbove: false,
+                          showScoreOnPlate: true,
+                          turnSecondsRemaining: _isMyTurn ? turnSecondsRemaining : null,
+                          layout: L,
                         ),
                       ),
                     ),
@@ -226,6 +201,7 @@ class RummyTableBoard extends StatelessWidget {
           cy: cy,
           rx: rx,
           ry: ry,
+          // Upper arc only — bottom rim is reserved for the local seat + hand.
           angle: count == 1 ? math.pi / 2 : math.pi - i * (math.pi / (count - 1)),
           player: opponents[i],
           layout: layout,

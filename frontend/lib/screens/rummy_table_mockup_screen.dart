@@ -46,13 +46,12 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
   /// Start in draw phase so deck/discard taps work immediately.
   RummyTurnPhase _previewPhase = RummyTurnPhase.awaitingDraw;
 
-  /// Empty at deal — only valid melds get visual trays (via auto-split / Sort).
+  /// Empty at deal — only valid melds get visual trays after Create Group.
   /// Manual group breaks after card index (gap between i and i+1).
-  /// Seeded to match the sample hand's intended melds for the mockup.
-  final Set<int> _groupBreaks = {3, 7, 10};
+  final Set<int> _groupBreaks = {};
 
   /// Single layout source for seats / piles / hand — tune via [RummyLayout.scaled].
-  static const RummyLayout _layout = RummyLayout(scale: 1.15);
+  static const RummyLayout _layout = RummyLayout(scale: 1.0);
 
   rummy.Card? _finishSlotCard;
   DeclareResultEvent? _lastDeclareResult;
@@ -154,7 +153,6 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
       isMyTurn: true,
       canDiscardSelected: _previewPhase == RummyTurnPhase.awaitingDiscard,
       headerTrailing: _walletChip(),
-      belowHeader: _previewPhaseSwitch(),
       onExit: () => _confirmExit(context),
       onCloseDeclareResult: () => setState(() => _lastDeclareResult = null),
       onCardTap: (index, card) {
@@ -247,45 +245,9 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
     );
   }
 
-  Widget _previewPhaseSwitch() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      child: Row(
-        children: [
-          _phaseChip('Draw', RummyTurnPhase.awaitingDraw),
-          const SizedBox(width: 6),
-          _phaseChip('Discard', RummyTurnPhase.awaitingDiscard),
-          const Spacer(),
-          Text(
-            'Mock preview',
-            style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 10),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _phaseChip(String label, RummyTurnPhase value) {
-    final selected = _previewPhase == value;
-    return ChoiceChip(
-      label: Text(label, style: const TextStyle(fontSize: 11)),
-      selected: selected,
-      onSelected: (_) => setState(() {
-        _previewPhase = value;
-        _selectedIndex = null;
-        _restartTurnTimer();
-      }),
-      selectedColor: RummyColors.gold.withOpacity(0.85),
-      backgroundColor: Colors.white.withOpacity(0.06),
-      labelStyle: TextStyle(color: selected ? Colors.black : Colors.white70),
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
   void _drawFromPile(bool fromClosed) {
     if (_previewPhase != RummyTurnPhase.awaitingDraw) {
-      _showMockSnack('Finish your discard first — or switch preview to Awaiting Draw');
+      _showMockSnack('Finish your discard first');
       return;
     }
 

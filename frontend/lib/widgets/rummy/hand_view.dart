@@ -24,6 +24,9 @@ class PileDragPayload {
 /// Local player's hand. Groups are defined only by [groupBreaksAfterIndex]
 /// (manual Split/Merge); cards are never auto-reordered. Each group is
 /// reclassified with [classifyGroup] whenever the hand rebuilds.
+///
+/// Cards always render at full [RummyLayout.cardWidth] — width pressure is
+/// handled by overlap advance and/or horizontal scrolling, never by scaling.
 class HandView extends StatelessWidget {
   final List<rummy.Card> cards;
   final rummy.Value? wildValue;
@@ -88,18 +91,20 @@ class HandView extends StatelessWidget {
       );
     }
 
-    // Groups come only from manual breaks — never auto-reordered.
     final segments = _segments();
+    // Flat fan until the player creates a group break (Create Group / gap split).
+    final groupingActive = groupBreaksAfterIndex.isNotEmpty;
 
     return DragTarget<PileDragPayload>(
       onWillAcceptWithDetails: (_) => onAcceptFromPile != null,
       onAcceptWithDetails: (d) => onAcceptFromPile?.call(d.data.fromClosed),
       builder: (context, pileCandidate, rejected) {
         final drawing = pileCandidate.isNotEmpty;
-        final anyLabeled = segments.any((s) => s.showLabel);
+        final anyLabeled = groupingActive && segments.any((s) => s.showLabel);
 
         return Container(
           height: anyLabeled ? L.handHeightWithMelds : L.handHeightPlain,
+          width: double.infinity,
           decoration: drawing
               ? BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
@@ -109,52 +114,15 @@ class HandView extends StatelessWidget {
               : null,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final groupCount = segments.length;
-              final gapBudget = (groupCount - 1).clamp(0, 99) * L.handMeldGap + (cards.length - 1) * L.handSoftGap;
-              final available = (constraints.maxWidth * 0.96) - gapBudget - (groupCount * 12.0 * L.scale);
-              final slot = (available / cards.length).clamp(L.handSlotMin, L.handSlotMax);
-
+              final advance = _computeAdvance(segments, constraints.maxWidth, L);
               final rowChildren = <Widget>[];
+
               for (var g = 0; g < segments.length; g++) {
                 final segment = segments[g];
                 final formed = segment.isFormedMeld;
-                final tray = segment.showLabel;
+                final tray = groupingActive && segment.showLabel;
 
-                final cardsRow = Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var k = 0; k < segment.cards.length; k++) ...[
-                      _HandCard(
-                        key: ValueKey('hand_${segment.startIndex + k}_${segment.cards[k].code}'),
-                        index: segment.startIndex + k,
-                        card: segment.cards[k],
-                        slotWidth: slot,
-                        cardWidth: L.cardWidth,
-                        cardHeight: L.handCardHeight,
-                        selected: selectedIndex == segment.startIndex + k,
-                        isWild: segment.cards[k].isWildFor(wildValue),
-                        onTap: () => onCardTap?.call(segment.startIndex + k, segment.cards[k]),
-                        onMoveHere: (from) => onMoveCard?.call(from, segment.startIndex + k),
-                      ),
-                      if (k < segment.cards.length - 1)
-                        _BetweenGap(
-                          width: L.handSoftGap,
-                          isGroupBreak: false,
-                          onDrop: (from) {
-                            final after = segment.startIndex + k;
-                            if (onMoveIntoGap != null) {
-                              onMoveIntoGap!(from, after);
-                            } else {
-                              onMoveCard?.call(from, after);
-                            }
-                          },
-                          onTap: () => onToggleGroupBreak?.call(segment.startIndex + k),
-                        ),
-                    ],
-                  ],
-                );
-
-                final label = !segment.showLabel
+                final label = !tray
                     ? null
                     : (formed ? '✓ ${meldLabel(segment.kind!)}' : '✕ ${meldLabel(segment.kind ?? 'GROUP')}');
                 final labelColor = formed ? RummyColors.success : RummyColors.danger;
@@ -183,7 +151,19 @@ class HandView extends StatelessWidget {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            cardsRow,
+                            _OverlappingCardRow(
+                              segment: segment,
+                              advance: advance,
+                              cardWidth: L.cardWidth,
+                              cardHeight: L.handCardHeight,
+                              softGap: L.handSoftGap,
+                              selectedIndex: selectedIndex,
+                              wildValue: wildValue,
+                              onCardTap: onCardTap,
+                              onMoveCard: onMoveCard,
+                              onMoveIntoGap: onMoveIntoGap,
+                              onToggleGroupBreak: onToggleGroupBreak,
+                            ),
                             if (label != null) ...[
                               SizedBox(height: 5 * L.scale),
                               Container(
@@ -231,11 +211,16 @@ class HandView extends StatelessWidget {
                 }
               }
 
-              return Center(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: EdgeInsets.symmetric(horizontal: 8 * L.scale, vertical: 4 * L.scale),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: rowChildren),
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.symmetric(horizontal: 8 * L.scale, vertical: 4 * L.scale),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth - 16 * L.scale),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: rowChildren,
+                  ),
                 ),
               );
             },
@@ -243,6 +228,35 @@ class HandView extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Left-edge advance between cards: full width + soft gap when space allows,
+  /// otherwise overlap down to [handSlotMin]. Never shrinks card widgets.
+  double _computeAdvance(List<HandSegment> segments, double maxWidth, RummyLayout L) {
+    final groupCount = segments.length;
+    final trayPad = groupCount * 12.0 * L.scale;
+    final sidePad = 16 * L.scale;
+    final meldGaps = (groupCount - 1).clamp(0, 99) * L.handMeldGap;
+    final available = (maxWidth - sidePad - trayPad - meldGaps).clamp(0.0, double.infinity);
+
+    final openAdvance = L.cardWidth + L.handSoftGap;
+    var idealWidth = 0.0;
+    for (final s in segments) {
+      final n = s.cards.length;
+      if (n <= 0) continue;
+      idealWidth += n == 1 ? L.cardWidth : (n - 1) * openAdvance + L.cardWidth;
+    }
+
+    if (idealWidth <= available || cards.length <= 1) {
+      return openAdvance;
+    }
+
+    // sum_g ((n_g - 1) * advance + cardWidth) = (n - groupCount) * advance + groupCount * cardWidth
+    final n = cards.length;
+    final cardBases = groupCount * L.cardWidth;
+    final steps = (n - groupCount).clamp(0, n);
+    if (steps == 0) return L.cardWidth;
+    return ((available - cardBases) / steps).clamp(L.handSlotMin, L.cardWidth);
   }
 
   /// Client-side visual heuristic aligned with backend [HandValidator] classify:
@@ -364,10 +378,96 @@ class HandView extends StatelessWidget {
   }
 }
 
+/// Renders one meld group as a width-based fan: full-size cards, [advance]
+/// between left edges (overlap when advance &lt; cardWidth).
+class _OverlappingCardRow extends StatelessWidget {
+  final HandSegment segment;
+  final double advance;
+  final double cardWidth;
+  final double cardHeight;
+  final double softGap;
+  final int? selectedIndex;
+  final rummy.Value? wildValue;
+  final void Function(int index, rummy.Card card)? onCardTap;
+  final void Function(int fromIndex, int toIndex)? onMoveCard;
+  final void Function(int fromIndex, int gapAfterIndex)? onMoveIntoGap;
+  final void Function(int index)? onToggleGroupBreak;
+
+  const _OverlappingCardRow({
+    required this.segment,
+    required this.advance,
+    required this.cardWidth,
+    required this.cardHeight,
+    required this.softGap,
+    required this.selectedIndex,
+    required this.wildValue,
+    this.onCardTap,
+    this.onMoveCard,
+    this.onMoveIntoGap,
+    this.onToggleGroupBreak,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final n = segment.cards.length;
+    if (n == 0) return const SizedBox.shrink();
+
+    final step = advance;
+    final totalWidth = n == 1 ? cardWidth : (n - 1) * step + cardWidth;
+
+    return SizedBox(
+      width: totalWidth,
+      height: cardHeight + 12,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var k = 0; k < n; k++)
+            Positioned(
+              left: k * step,
+              bottom: 0,
+              width: cardWidth,
+              height: cardHeight + 12,
+              child: _HandCard(
+                key: ValueKey('hand_${segment.startIndex + k}_${segment.cards[k].code}'),
+                index: segment.startIndex + k,
+                card: segment.cards[k],
+                cardWidth: cardWidth,
+                cardHeight: cardHeight,
+                selected: selectedIndex == segment.startIndex + k,
+                isWild: segment.cards[k].isWildFor(wildValue),
+                onTap: () => onCardTap?.call(segment.startIndex + k, segment.cards[k]),
+                onMoveHere: (from) => onMoveCard?.call(from, segment.startIndex + k),
+              ),
+            ),
+          for (var k = 0; k < n - 1; k++)
+            Positioned(
+              left: k * step + step - softGap / 2,
+              top: 0,
+              bottom: 0,
+              width: softGap.clamp(8.0, 24.0),
+              child: _BetweenGap(
+                width: softGap.clamp(8.0, 24.0),
+                isGroupBreak: false,
+                onDrop: (from) {
+                  final after = segment.startIndex + k;
+                  if (onMoveIntoGap != null) {
+                    onMoveIntoGap!(from, after);
+                  } else {
+                    onMoveCard?.call(from, after);
+                  }
+                },
+                onTap: () => onToggleGroupBreak?.call(segment.startIndex + k),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HandCard extends StatelessWidget {
   final int index;
   final rummy.Card card;
-  final double slotWidth;
   final double cardWidth;
   final double cardHeight;
   final bool selected;
@@ -379,7 +479,6 @@ class _HandCard extends StatelessWidget {
     super.key,
     required this.index,
     required this.card,
-    required this.slotWidth,
     required this.cardWidth,
     required this.cardHeight,
     required this.selected,
@@ -402,41 +501,32 @@ class _HandCard extends StatelessWidget {
       onWillAcceptWithDetails: (d) => d.data.handIndex != index,
       onAcceptWithDetails: (d) => onMoveHere(d.data.handIndex),
       builder: (context, candidate, rejected) {
-        return SizedBox(
-          width: slotWidth,
-          height: cardHeight + 12,
-          child: OverflowBox(
-            maxWidth: cardWidth,
-            minWidth: cardWidth,
-            alignment: Alignment.bottomCenter,
-            child: Draggable<HandDragPayload>(
-              data: HandDragPayload(handIndex: index, card: card),
-              maxSimultaneousDrags: 1,
-              feedback: Material(
-                color: Colors.transparent,
-                elevation: 12,
-                child: PlayingCardView(
-                  card: card,
-                  isWild: isWild,
-                  width: cardWidth,
-                  height: cardHeight,
-                ),
-              ),
-              childWhenDragging: Opacity(opacity: 0.2, child: cardWidget),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onTap,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
-                  decoration: candidate.isNotEmpty
-                      ? BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [BoxShadow(color: RummyColors.gold.withOpacity(0.55), blurRadius: 12)],
-                        )
-                      : null,
-                  child: cardWidget,
-                ),
-              ),
+        return Draggable<HandDragPayload>(
+          data: HandDragPayload(handIndex: index, card: card),
+          maxSimultaneousDrags: 1,
+          feedback: Material(
+            color: Colors.transparent,
+            elevation: 12,
+            child: PlayingCardView(
+              card: card,
+              isWild: isWild,
+              width: cardWidth,
+              height: cardHeight,
+            ),
+          ),
+          childWhenDragging: Opacity(opacity: 0.2, child: cardWidget),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 100),
+              decoration: candidate.isNotEmpty
+                  ? BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [BoxShadow(color: RummyColors.gold.withOpacity(0.55), blurRadius: 12)],
+                    )
+                  : null,
+              child: cardWidget,
             ),
           ),
         );
