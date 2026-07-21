@@ -74,16 +74,17 @@ class CardPilesView extends StatelessWidget {
     final canDraw = onDrawClosed != null;
     final L = layout;
 
-    // Cut joker lies landscape under the closed deck; left peek stays readable.
+    // Cut joker lies landscape under the closed deck; left + bottom peek stay readable.
     // After RotatedBox(quarterTurns: 1): footprint is cardHeight × cardWidth.
     final jokerLayoutW = _h;
     final jokerLayoutH = _w;
     final jokerPeekLeft = L.jokerPeekLeft;
+    final jokerPeekDown = L.jokerPeekDown;
     final boxW = joker != null ? (jokerPeekLeft + _w + 8 * L.scale) : (_w + 8 * L.scale);
-    final boxH = _h + 8 * L.scale;
+    final boxH = joker != null ? (_h + jokerPeekDown + 10 * L.scale) : (_h + 8 * L.scale);
     final deckLeft = joker != null ? jokerPeekLeft : 4.0 * L.scale;
-    final jokerBottom = (boxH - jokerLayoutH) / 2;
-    final deckBottom = (boxH - _h) / 2;
+    final deckBottom = joker != null ? (jokerPeekDown + 4 * L.scale) : 4.0 * L.scale;
+    final jokerBottom = 0.0;
 
     final stack = SizedBox(
       width: boxW,
@@ -100,39 +101,52 @@ class CardPilesView extends StatelessWidget {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  RotatedBox(
-                    quarterTurns: 1,
-                    child: PlayingCardView(
-                      card: joker,
-                      isWild: true,
-                      width: _w,
-                      height: _h,
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(9),
+                      boxShadow: [
+                        BoxShadow(
+                          color: RummyColors.gold.withOpacity(0.55),
+                          blurRadius: 10,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: RotatedBox(
+                      quarterTurns: 1,
+                      child: PlayingCardView(
+                        card: joker,
+                        isWild: true,
+                        width: _w,
+                        height: _h,
+                      ),
                     ),
                   ),
+                  // Badge sits on the visible left peek (not under the deck).
                   Positioned(
-                    left: 6 * L.scale,
-                    bottom: 6 * L.scale,
+                    left: 4 * L.scale,
+                    top: 4 * L.scale,
                     child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6 * L.scale, vertical: 3 * L.scale),
+                      padding: EdgeInsets.symmetric(horizontal: 7 * L.scale, vertical: 3.5 * L.scale),
                       decoration: BoxDecoration(
                         gradient: RummyLayout.jokerChipGradient,
-                        borderRadius: BorderRadius.circular(5),
-                        border: Border.all(color: Colors.white, width: 1.2),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.white, width: 1.3),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.4),
-                            blurRadius: 4,
+                            color: Colors.black.withOpacity(0.45),
+                            blurRadius: 5,
                             offset: const Offset(0, 1),
                           ),
                         ],
                       ),
                       child: Text(
-                        'joker',
+                        'JOKER',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 9 * L.scale,
+                          fontSize: 11 * L.scale,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 0.3,
+                          letterSpacing: 0.5,
                           height: 1,
                         ),
                       ),
@@ -153,8 +167,8 @@ class CardPilesView extends StatelessWidget {
 
     final labeled = _labeledPile(
       stack,
-      '',
-      Colors.transparent,
+      joker != null ? 'OPEN JOKER' : '',
+      joker != null ? RummyColors.gold : Colors.transparent,
       highlight: canDraw,
     );
 

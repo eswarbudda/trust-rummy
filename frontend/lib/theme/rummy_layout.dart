@@ -43,10 +43,12 @@ class RummyLayout {
   double get headerMinHeight => _s(52);
   /// Group controls + DRAW/DISCARD + DROP/SHOW share one lane under the table.
   double get bottomLaneHeight => _s(60);
-  /// Outer inset that pulls action clusters toward the group controls.
-  double get bottomLaneSideInset => _s(28);
-  /// Space between an action cluster and the center group-controls slot.
+  /// Outer horizontal pad for the bottom lane.
+  double get bottomLaneSideInset => _s(12);
+  /// Space between an action pair and the center group-controls slot.
   double get bottomLaneActionToGroupGap => _s(16);
+  /// Empty center gap when no card is selected (keeps pairs flanking the middle).
+  double get bottomLaneCenterGap => _s(48);
   /// Gap between paired action buttons (DRAW↔DISCARD, DROP↔SHOW).
   double get actionButtonGap => _s(18);
   /// Compact action-button metrics (DRAW / DISCARD / DROP / SHOW).
@@ -65,7 +67,10 @@ class RummyLayout {
   // --- Center piles ---
   double get pileSpacingDeckToDiscard => _s(32);
   double get pileSpacingDiscardToFinish => _s(22);
-  double get jokerPeekLeft => _s(48);
+  /// How much of the cut/open joker peeks left of the closed deck.
+  double get jokerPeekLeft => _s(66);
+  /// Extra downward offset so the open joker clears the deck face.
+  double get jokerPeekDown => _s(18);
   double get pileStackOffsetX => _s(1.6);
   double get pileStackOffsetY => _s(1.4);
 

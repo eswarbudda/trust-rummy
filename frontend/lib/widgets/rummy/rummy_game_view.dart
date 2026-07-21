@@ -23,7 +23,7 @@ enum RummyGameUiMode {
 ///
 /// Zone Column (top → bottom):
 /// Header → Table Area (felt + seats + piles + hand) → Bottom Lane
-/// (DRAW/DISCARD · group controls · DROP/SHOW on one row).
+/// (DRAW/DISCARD · group controls · DROP/SHOW, centered Option C).
 ///
 /// No networking, no services, no mutable game state.
 class RummyGameView extends StatelessWidget {
@@ -296,6 +296,7 @@ class RummyGameView extends StatelessWidget {
 
   Widget _bottomLane() {
     final L = layout;
+    // Option C: pairs flank group tools near center (not pinned to screen edges).
     return Padding(
       padding: EdgeInsets.fromLTRB(
         L.bottomLaneSideInset,
@@ -305,27 +306,38 @@ class RummyGameView extends StatelessWidget {
       ),
       child: Row(
         children: [
-          RummyActionBar.drawDiscard(
-            isMyTurn: isMyTurn,
-            phase: phase,
-            layout: L,
-            canDiscardSelected: canDiscardSelected && selectedIndex != null,
-            onDraw: onDrawClosed,
-            onDiscard: onDiscardSelected,
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: RummyActionBar.drawDiscard(
+                isMyTurn: isMyTurn,
+                phase: phase,
+                layout: L,
+                canDiscardSelected: canDiscardSelected && selectedIndex != null,
+                onDraw: onDrawClosed,
+                onDiscard: onDiscardSelected,
+              ),
+            ),
           ),
+          SizedBox(width: L.bottomLaneActionToGroupGap),
+          if (selectedIndex != null)
+            Flexible(
+              child: Center(child: _selectedCardTools()),
+            )
+          else
+            SizedBox(width: L.bottomLaneCenterGap),
           SizedBox(width: L.bottomLaneActionToGroupGap),
           Expanded(
-            child: selectedIndex != null
-                ? Center(child: _selectedCardTools())
-                : const SizedBox.shrink(),
-          ),
-          SizedBox(width: L.bottomLaneActionToGroupGap),
-          RummyActionBar.dropShow(
-            isMyTurn: isMyTurn,
-            phase: phase,
-            layout: L,
-            onDrop: onDrop,
-            onDeclare: onDeclare,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: RummyActionBar.dropShow(
+                isMyTurn: isMyTurn,
+                phase: phase,
+                layout: L,
+                onDrop: onDrop,
+                onDeclare: onDeclare,
+              ),
+            ),
           ),
         ],
       ),
