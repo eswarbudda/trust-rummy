@@ -33,7 +33,16 @@ BETWEEN_DEALS --(START_NEXT_DEAL | 10s auto timer)--> IN_PROGRESS
 IN_PROGRESS|BETWEEN_DEALS --(match complete)--> COMPLETED
 ```
 
-Match completes when: ≤1 active player remains, a heads-up drop walkover occurs, or (POINTS / DEALS) `dealNumber >= dealsPerMatch`.
+Match completes when:
+- ≤1 active (non-eliminated) player remains, or
+- a heads-up drop walkover occurs, or
+- **POINTS** — the (only) deal ends (single-deal match; never enters `BETWEEN_DEALS`), or
+- **DEALS** — `dealNumber >= dealsPerMatch`.
+
+**Variant shapes:**
+- `POINTS` — one deal, then `MATCH_ENDED` + stake settle; no `DEAL_RESULT` / `BETWEEN_DEALS`.
+- `DEALS` — fixed N deals (default 2), cumulative scores, `BETWEEN_DEALS` between deals, settle after the final deal.
+- `POOL_101` / `POOL_201` — multi-deal until elimination leaves ≤1 active player (or walkover).
 
 The moment a match reaches `COMPLETED`, `RummyEngineService#finishMatch` evicts its `MatchState` from `GameStateService` (`gameStateService.remove(roomCode)`) — a naturally-finished match never lingers in memory for the rest of the process's lifetime; only a still-`WAITING`/`IN_PROGRESS` room being disbanded via `RoomService` removed it previously. The durable record from here on is the DB `GameSession` row (§10); the WebSocket channel has nothing further to say about a finished match, and a room can never restart without going through the lobby's `WAITING` flow again.
 
@@ -43,7 +52,7 @@ The moment a match reaches `COMPLETED`, `RummyEngineService#finishMatch` evicts 
 IN_PROGRESS --(valid DECLARE | wrong DECLARE | drops down to 1 active player)--> COMPLETED
 ```
 
-When a deal completes and the match is **not** over, the engine enters `BETWEEN_DEALS`, broadcasts `DEAL_RESULT`, and waits for `START_NEXT_DEAL` or the auto-next-deal countdown (default 10s) before `startNewDeal`. Gameplay actions are rejected while `BETWEEN_DEALS`.
+When a deal completes and the match is **not** over (DEALS / pool only), the engine enters `BETWEEN_DEALS`, broadcasts `DEAL_RESULT`, and waits for `START_NEXT_DEAL` or the auto-next-deal countdown (default 10s) before `startNewDeal`. Gameplay actions are rejected while `BETWEEN_DEALS`. POINTS never takes this path.
 
 ### 2.3 Turn phase (`TurnPhase`), per current turn-holder
 
@@ -75,8 +84,8 @@ ACTIVE --(last player standing at match end)--> WINNER
 |---|---|---|
 | `maxPlayers` | 6 | Copied from the room's `maxPlayers` (2–6) at match start |
 | `gameVariant` | `POOL_101` | `POOL_101` \| `POOL_201` \| `POINTS` \| `DEALS` |
-| `dealsPerMatch` | `2` for POINTS/DEALS; `null` for pool | Match length for fixed-deal variants |
-| `autoNextDealSeconds` | 10 | Countdown before auto `startNewDeal` from `BETWEEN_DEALS` |
+| `dealsPerMatch` | `2` for DEALS; `null` for POINTS and pool | Match length for `DEALS` only (`GameVariant.isFixedDealMatch`). POINTS is always one deal (`isSingleDealMatch`). Room create ignores client `dealsPerMatch` for POINTS/pool. |
+| `autoNextDealSeconds` | 10 | Countdown before auto `startNewDeal` from `BETWEEN_DEALS` (DEALS/pool) |
 | `penaltyFirstDrop` | 20 | Points for dropping on a player's first turn of a deal |
 | `penaltyMiddleDrop` | 40 | Points for dropping on any later turn |
 | `penaltyMaxCap` | 80 | Hard ceiling on any single deal's loss for one player |
