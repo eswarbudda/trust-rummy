@@ -286,7 +286,9 @@ public class RummyEngineService implements GameEngine {
         for (Long userId : deal.getTurnOrder()) {
             RoundStatus status = deal.getRoundStatus().get(userId);
             if (status == RoundStatus.DROPPED || status == RoundStatus.DECLARED_WRONG) {
-                continue; // already penalized at the moment it happened
+                // Already on the scorecard; surface the same figure in SCORE_UPDATE.
+                roundPoints.put(userId, deal.getAppliedRoundPoints().getOrDefault(userId, 0));
+                continue;
             }
             if (userId.equals(winnerUserId)) {
                 roundPoints.put(userId, 0);
@@ -592,7 +594,9 @@ public class RummyEngineService implements GameEngine {
             endDeal(match, deal, userId, false);
         } else {
             deal.getRoundStatus().put(userId, RoundStatus.DECLARED_WRONG);
-            match.getScorecards().get(userId).addPoints(scoreCalculator.wrongDeclarePoints(match.getConfig()));
+            int wrongPoints = scoreCalculator.wrongDeclarePoints(match.getConfig());
+            match.getScorecards().get(userId).addPoints(wrongPoints);
+            deal.getAppliedRoundPoints().put(userId, wrongPoints);
             endDeal(match, deal, null, true);
         }
     }
@@ -610,6 +614,7 @@ public class RummyEngineService implements GameEngine {
 
         deal.getRoundStatus().put(userId, RoundStatus.DROPPED);
         match.getScorecards().get(userId).addPoints(penalty);
+        deal.getAppliedRoundPoints().put(userId, penalty);
 
         List<Card> hand = deal.getHands().remove(userId);
         if (hand != null && !hand.isEmpty()) {
@@ -678,6 +683,7 @@ public class RummyEngineService implements GameEngine {
             if (scorecard != null) {
                 scorecard.addPoints(penalty);
             }
+            deal.getAppliedRoundPoints().put(userId, penalty);
 
             List<Card> hand = deal.getHands().remove(userId);
             if (hand != null && !hand.isEmpty()) {

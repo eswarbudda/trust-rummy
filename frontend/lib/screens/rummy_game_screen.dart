@@ -89,11 +89,13 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   RummyGameUiMode get _uiMode {
-    if (_connectionState != SocketConnectionState.connected) {
-      return RummyGameUiMode.disconnected;
-    }
+    // Match-over must win over disconnect — otherwise a socket blip right as
+    // MATCH_ENDED arrives hides the summary and looks like "game didn't end".
     if (_matchEnded || _state.snapshot?.matchStatus == RummyMatchStatus.completed) {
       return RummyGameUiMode.completed;
+    }
+    if (_connectionState != SocketConnectionState.connected) {
+      return RummyGameUiMode.disconnected;
     }
     if (_dealResult != null || _state.snapshot?.matchStatus == RummyMatchStatus.betweenDeals) {
       return RummyGameUiMode.dealResult;
@@ -484,7 +486,21 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   void _nudgeSelected(int delta) {
     final from = _selectedIndex;
     if (from == null) return;
-    _moveCard(from, from + delta);
+    final to = from + delta;
+    final hand = List<rummy.Card>.from(_state.myHandArrangement);
+    if (to < 0 || to >= hand.length) return;
+    // Adjacent swap via remove+insert (not _moveCard): _moveCard(from, from+1)
+    // is a no-op because remove shifts indices then insert undoes the move.
+    final before = Set<int>.from(_groupBreaks);
+    final card = hand.removeAt(from);
+    hand.insert(to, card);
+    setState(() {
+      _state.reorderHand(hand);
+      _groupBreaks
+        ..clear()
+        ..addAll(HandGrouping.afterMove(before, from, to, hand.length));
+      _selectedIndex = to;
+    });
   }
 
   void _confirmExit() {

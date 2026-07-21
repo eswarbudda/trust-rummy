@@ -57,7 +57,7 @@ class RoomApiService {
   Future<CreatedRoom> createRoom({
     required String jwt,
     String name = 'Engine Test Room',
-    int maxPlayers = 2,
+    int maxPlayers = 6,
     double stakeAmount = 0,
     String gameVariant = 'POOL_101',
     /// Only meaningful for DEALS; ignored by the server for POINTS and pool.

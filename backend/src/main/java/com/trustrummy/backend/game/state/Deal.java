@@ -46,6 +46,12 @@ public class Deal {
     /** userId -> whether they have completed at least one full turn (draw+discard) this deal. */
     private final Map<Long, Boolean> hasCompletedFirstTurn = new ConcurrentHashMap<>();
 
+    /**
+     * userId -> points already applied mid-deal (drop / wrong declare) so
+     * {@code SCORE_UPDATE} / {@code DEAL_RESULT} can show the same deal penalty.
+     */
+    private final Map<Long, Integer> appliedRoundPoints = new ConcurrentHashMap<>();
+
     private volatile Card cutJokerCard;
     private volatile Value wildValue;
     private volatile int currentTurnIndex = 0;
