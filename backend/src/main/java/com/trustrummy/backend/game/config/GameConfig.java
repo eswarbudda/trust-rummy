@@ -17,7 +17,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class GameConfig {
 
-    public static final int DEFAULT_POINTS_DEALS_PER_MATCH = 2;
+    /** Default deal count for {@link GameVariant#DEALS} when the room omits it. */
+    public static final int DEFAULT_DEALS_PER_MATCH = 2;
     public static final int DEFAULT_AUTO_NEXT_DEAL_SECONDS = 10;
 
     @Builder.Default
@@ -45,9 +46,10 @@ public class GameConfig {
     private int turnTimeoutSeconds = 30;
 
     /**
-     * How many deals make up a Points/Deals match. {@code null} for pool
-     * variants (match ends via elimination). POINTS defaults to
-     * {@link #DEFAULT_POINTS_DEALS_PER_MATCH} when the room omits it.
+     * How many deals make up a {@link GameVariant#DEALS} match.
+     * {@code null} for pool (elimination) and for {@link GameVariant#POINTS}
+     * (always a single deal). DEALS defaults to {@link #DEFAULT_DEALS_PER_MATCH}
+     * when the room omits it.
      */
     private Integer dealsPerMatch;
 

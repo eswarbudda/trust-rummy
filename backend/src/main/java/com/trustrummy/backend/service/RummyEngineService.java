@@ -349,6 +349,10 @@ public class RummyEngineService implements GameEngine {
             return true;
         }
         GameVariant variant = match.getConfig().getGameVariant();
+        // Points Rummy: one deal is the whole match — never BETWEEN_DEALS.
+        if (variant.isSingleDealMatch()) {
+            return true;
+        }
         Integer dealsPerMatch = match.getConfig().getDealsPerMatch();
         return variant.isFixedDealMatch()
                 && dealsPerMatch != null
@@ -460,13 +464,17 @@ public class RummyEngineService implements GameEngine {
     }
 
     private static Integer resolveDealsPerMatch(GameVariant variant, Integer roomDealsPerMatch) {
+        if (variant.hasElimination() || variant.isSingleDealMatch()) {
+            // Pool: elimination-driven. Points: always one deal (ignore room value).
+            return null;
+        }
         if (!variant.isFixedDealMatch()) {
             return null;
         }
         if (roomDealsPerMatch != null) {
             return roomDealsPerMatch;
         }
-        return GameConfig.DEFAULT_POINTS_DEALS_PER_MATCH;
+        return GameConfig.DEFAULT_DEALS_PER_MATCH;
     }
 
     private void finishMatch(MatchState match, Long matchWinnerId) {
