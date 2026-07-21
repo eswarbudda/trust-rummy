@@ -45,14 +45,16 @@ public class RoomService {
         User creator = userRepository.findByUsername(creatorUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown user: " + creatorUsername));
 
+        GameVariant variant = request.getGameVariant() != null ? request.getGameVariant() : GameVariant.POOL_101;
+
         GameRoom room = GameRoom.builder()
                 .roomCode(generateUniqueRoomCode())
                 .name(request.getName())
                 .maxPlayers(request.getMaxPlayers())
                 .stakeAmount(request.getStakeAmount())
                 .gameType(request.getGameType() != null ? request.getGameType() : GameType.RUMMY)
-                .gameVariant(request.getGameVariant() != null ? request.getGameVariant() : GameVariant.POOL_101)
-                .dealsPerMatch(request.getDealsPerMatch())
+                .gameVariant(variant)
+                .dealsPerMatch(resolveStoredDealsPerMatch(variant, request.getDealsPerMatch()))
                 .status(RoomStatus.WAITING)
                 .createdBy(creator)
                 .build();
@@ -261,6 +263,17 @@ public class RoomService {
             code = randomCode(6);
         } while (gameRoomRepository.findByRoomCode(code).isPresent());
         return code;
+    }
+
+    /**
+     * Persist {@code deals_per_match} only for {@link GameVariant#DEALS}.
+     * POINTS and pool always store {@code null} even if the client sent a value.
+     */
+    private static Integer resolveStoredDealsPerMatch(GameVariant variant, Integer requested) {
+        if (variant.isFixedDealMatch()) {
+            return requested;
+        }
+        return null;
     }
 
     private String randomCode(int length) {

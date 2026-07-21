@@ -31,8 +31,9 @@ public class RoomCreateRequest {
     private GameVariant gameVariant;
 
     /**
-     * Deals in a POINTS / DEALS match. Ignored for pool variants.
-     * POINTS defaults to 2 when omitted; DEALS defaults to 2 when omitted.
+     * Deals in a {@link GameVariant#DEALS} match only.
+     * Ignored for {@link GameVariant#POINTS} (always one deal) and pool variants.
+     * DEALS defaults to 2 when omitted.
      */
     @Min(1)
     @Max(50)

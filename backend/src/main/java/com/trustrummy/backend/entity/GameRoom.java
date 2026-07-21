@@ -53,8 +53,8 @@ public class GameRoom {
     private GameVariant gameVariant = GameVariant.POOL_101;
 
     /**
-     * Deals in a POINTS / DEALS match. Null for pool variants. When null for
-     * POINTS at match start, the engine applies the Points default (2).
+     * Deals in a {@link GameVariant#DEALS} match. Null for pool and for
+     * {@link GameVariant#POINTS} (single-deal; room create clears any client value).
      */
     @Column(name = "deals_per_match")
     private Integer dealsPerMatch;
