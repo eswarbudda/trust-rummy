@@ -18,6 +18,8 @@ class RummyGameScreen extends StatefulWidget {
   final String? myUsername;
   final String roomCode;
   final Map<String, dynamic>? initialDealJson;
+  /// Human-readable variant for the table header (e.g. "Points", "Pool 101").
+  final String? gameVariantLabel;
 
   const RummyGameScreen({
     super.key,
@@ -26,6 +28,7 @@ class RummyGameScreen extends StatefulWidget {
     this.myUserId,
     this.myUsername,
     this.initialDealJson,
+    this.gameVariantLabel,
   });
 
   @override
@@ -50,6 +53,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   bool _matchEndUiShown = false;
   MatchEndedEvent? _matchEndedEvent;
   ScoreUpdateEvent? _lastScoreUpdate;
+  DealResultEvent? _dealResult;
 
   SocketConnectionState _connectionState = SocketConnectionState.disconnected;
   int _turnSecondsLeft = _turnTimeoutSeconds;
@@ -91,6 +95,9 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     if (_matchEnded || _state.snapshot?.matchStatus == RummyMatchStatus.completed) {
       return RummyGameUiMode.completed;
     }
+    if (_dealResult != null || _state.snapshot?.matchStatus == RummyMatchStatus.betweenDeals) {
+      return RummyGameUiMode.dealResult;
+    }
     if (_state.snapshot == null) {
       return RummyGameUiMode.waiting;
     }
@@ -121,6 +128,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
         _matchEnded = false;
         _matchEndUiShown = false;
         _matchEndedEvent = null;
+        _dealResult = null;
         _applyDealJson(event.raw, isFreshDeal: true);
         setState(() {
           _finishSlotCard = null;
@@ -133,7 +141,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
       case 'CARD_DRAWN':
       case 'CARD_DISCARDED':
       case 'PLAYER_DROPPED':
-        if (_matchEnded) return;
+        if (_matchEnded || _dealResult != null) return;
         _applyDealJson(event.raw, isFreshDeal: false);
         break;
       case 'ROOM_STATE':
@@ -147,12 +155,16 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
         _handleDeclareResult(event.raw);
         break;
       case 'SCORE_UPDATE':
-        // Keep for the match-result summary; do not block with a mid-flow dialog
-        // (that previously stacked under MATCH_ENDED and left players on the table).
+        // Keep for the match-result summary; deal UI comes from DEAL_RESULT.
         _lastScoreUpdate = ScoreUpdateEvent.fromJson(event.raw);
+        break;
+      case 'DEAL_RESULT':
+        if (_matchEnded) return;
+        _onDealResult(DealResultEvent.fromJson(event.raw));
         break;
       case 'MATCH_ENDED':
         // Protocol event name is MATCH_ENDED (not GAME_COMPLETED).
+        _dealResult = null;
         _onMatchEnded(MatchEndedEvent.fromJson(event.raw));
         break;
       case 'ERROR':
@@ -163,6 +175,17 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
       default:
         break;
     }
+  }
+
+  /// Between-deal pause: freeze actions and show DealResultDialog.
+  void _onDealResult(DealResultEvent result) {
+    if (!mounted) return;
+    _turnTimer?.cancel();
+    _dismissTransientDialogs();
+    setState(() {
+      _dealResult = result;
+      _selectedIndex = null;
+    });
   }
 
   /// Match lifecycle end: freeze actions → identical in-tree result overlay
@@ -204,6 +227,23 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
+  }
+
+  void _startNextDeal() {
+    if (_matchEnded || _dealResult == null) return;
+    widget.gameWs.startNextDeal();
+  }
+
+  /// Leave from deal result: ask the server to end the match, then stay on
+  /// the table until MATCH_ENDED arrives so everyone (including the leaver)
+  /// sees the match summary before returning to lobby.
+  void _leaveFromDealResult() {
+    if (_matchEnded) {
+      _returnToLobby();
+      return;
+    }
+    if (_dealResult == null) return;
+    widget.gameWs.leaveTable();
   }
 
   void _applyDealJson(Map<String, dynamic> raw, {required bool isFreshDeal}) {
@@ -278,6 +318,12 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     for (final p in _state.snapshot?.players ?? const <PlayerView>[]) {
       if (p.userId == userId) return p.username;
     }
+    for (final s in _dealResult?.scores ?? const <ScoreRow>[]) {
+      if (s.userId == userId) return s.username;
+    }
+    for (final s in _lastScoreUpdate?.scores ?? const <ScoreRow>[]) {
+      if (s.userId == userId) return s.username;
+    }
     return null;
   }
 
@@ -297,7 +343,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   void _draw(bool fromClosed) {
-    if (_matchEnded) return;
+    if (_matchEnded || _dealResult != null) return;
     if (!_state.canDraw) {
       _snack(_state.isMyTurn ? 'Finish your discard first' : 'Not your turn');
       return;
@@ -306,7 +352,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   void _discardAt(int? index) {
-    if (_matchEnded) return;
+    if (_matchEnded || _dealResult != null) return;
     if (!_state.canDiscardOrDeclare) {
       _snack(_state.isMyTurn ? 'Draw a card first' : 'Not your turn');
       return;
@@ -328,7 +374,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   void _confirmDrop() {
-    if (_matchEnded) return;
+    if (_matchEnded || _dealResult != null) return;
     if (!_state.canDrop) {
       _snack('Drop is only available before you draw');
       return;
@@ -358,7 +404,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   void _openDeclare() {
-    if (_matchEnded) return;
+    if (_matchEnded || _dealResult != null) return;
     if (!_state.canDiscardOrDeclare) {
       _snack(_state.isMyTurn ? 'Draw a card first' : 'Not your turn');
       return;
@@ -479,14 +525,16 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     final phase = snap?.turnPhase;
     final dealLabel = _matchEnded
         ? 'Match completed'
-        : (snap?.dealNumber != null ? 'Deal ${snap!.dealNumber}' : 'Waiting for deal');
-    final canAct = !_matchEnded;
+        : (_dealResult != null
+            ? 'Deal result'
+            : (snap?.dealNumber != null ? 'Deal ${snap!.dealNumber}' : 'Waiting for deal'));
+    final canAct = !_matchEnded && _dealResult == null;
     final canDraw = canAct && _state.canDraw;
     final canDiscard = canAct && _state.canDiscardOrDeclare;
 
     return RummyGameView(
       mode: _uiMode,
-      headerLabel: 'Points Rummy   ·   #${widget.roomCode}   ·   $dealLabel',
+      headerLabel: '${widget.gameVariantLabel ?? 'Rummy'}   ·   #${widget.roomCode}   ·   $dealLabel',
       layout: _layout,
       opponents: _state.opponents,
       me: me,
@@ -498,7 +546,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
       finishSlotCard: _finishSlotCard,
       phase: phase,
       currentTurnUserId: snap?.currentTurnUserId,
-      turnSecondsRemaining: _matchEnded ? null : _turnSecondsLeft,
+      turnSecondsRemaining: (_matchEnded || _dealResult != null) ? null : _turnSecondsLeft,
       selectedIndex: _selectedIndex,
       groupBreaksAfterIndex: _groupBreaks,
       declareResult: _lastDeclareResult,
@@ -511,10 +559,18 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
       playerNames: {
         for (final p in snap?.players ?? const <PlayerView>[]) p.userId: p.username,
         for (final s in _lastScoreUpdate?.scores ?? const <ScoreRow>[]) s.userId: s.username,
+        for (final s in _dealResult?.scores ?? const <ScoreRow>[]) s.userId: s.username,
       },
+      dealResult: _dealResult,
+      dealWinnerName: _nameFor(_dealResult?.winnerUserId),
+      onStartNextDeal: _startNextDeal,
       onPlayAgain: _returnToLobby,
-      onLeaveTable: _returnToLobby,
-      onExit: _matchEnded ? _returnToLobby : _confirmExit,
+      onLeaveTable: _matchEnded
+          ? _returnToLobby
+          : (_dealResult != null ? _leaveFromDealResult : _returnToLobby),
+      onExit: _matchEnded
+          ? _returnToLobby
+          : (_dealResult != null ? _leaveFromDealResult : _confirmExit),
       onCloseDeclareResult: () => setState(() => _lastDeclareResult = null),
       onCardTap: canAct
           ? (index, card) {

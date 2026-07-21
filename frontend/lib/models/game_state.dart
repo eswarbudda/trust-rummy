@@ -4,6 +4,7 @@ import 'card.dart';
 enum RummyMatchStatus {
   waiting,
   inProgress,
+  betweenDeals,
   completed;
 
   static RummyMatchStatus? fromWire(String? name) {
@@ -12,6 +13,8 @@ enum RummyMatchStatus {
         return RummyMatchStatus.waiting;
       case 'IN_PROGRESS':
         return RummyMatchStatus.inProgress;
+      case 'BETWEEN_DEALS':
+        return RummyMatchStatus.betweenDeals;
       case 'COMPLETED':
         return RummyMatchStatus.completed;
       default:
@@ -280,14 +283,60 @@ class ScoreUpdateEvent {
   }
 }
 
+/// `DEAL_RESULT` — between-deal (or final-deal) result payload for the result UI.
+class DealResultEvent {
+  final int? dealNumber;
+  final int? dealsPlayed;
+  final int? dealsPerMatch;
+  final int? winnerUserId;
+  final RummyMatchStatus? matchStatus;
+  final bool matchComplete;
+  final List<ScoreRow> scores;
+  final List<int> eliminatedUserIds;
+  final int autoNextDealSeconds;
+
+  const DealResultEvent({
+    this.dealNumber,
+    this.dealsPlayed,
+    this.dealsPerMatch,
+    this.winnerUserId,
+    this.matchStatus,
+    this.matchComplete = false,
+    this.scores = const [],
+    this.eliminatedUserIds = const [],
+    this.autoNextDealSeconds = 0,
+  });
+
+  factory DealResultEvent.fromJson(Map<String, dynamic> json) {
+    final scoresField = json['scores'];
+    final eliminatedField = json['eliminatedUserIds'];
+    return DealResultEvent(
+      dealNumber: (json['dealNumber'] as num?)?.toInt(),
+      dealsPlayed: (json['dealsPlayed'] as num?)?.toInt(),
+      dealsPerMatch: (json['dealsPerMatch'] as num?)?.toInt(),
+      winnerUserId: (json['winnerUserId'] as num?)?.toInt(),
+      matchStatus: RummyMatchStatus.fromWire(json['matchStatus'] as String?),
+      matchComplete: json['matchComplete'] as bool? ?? false,
+      scores: scoresField is List
+          ? scoresField.whereType<Map<String, dynamic>>().map(ScoreRow.fromJson).toList()
+          : const [],
+      eliminatedUserIds: eliminatedField is List
+          ? eliminatedField.map((e) => (e as num).toInt()).toList()
+          : const [],
+      autoNextDealSeconds: (json['autoNextDealSeconds'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 /// `MATCH_ENDED` — the whole match is over; `finalScores` keys are userIds
 /// (JSON object keys are always strings on the wire, even though the
 /// backend's map is keyed by `Long`).
 class MatchEndedEvent {
   final int? winnerUserId;
   final Map<int, int> finalScores;
+  final int? dealsPlayed;
 
-  const MatchEndedEvent({this.winnerUserId, this.finalScores = const {}});
+  const MatchEndedEvent({this.winnerUserId, this.finalScores = const {}, this.dealsPlayed});
 
   factory MatchEndedEvent.fromJson(Map<String, dynamic> json) {
     final scoresField = json['finalScores'];
@@ -301,6 +350,7 @@ class MatchEndedEvent {
     return MatchEndedEvent(
       winnerUserId: (json['winnerUserId'] as num?)?.toInt(),
       finalScores: scores,
+      dealsPlayed: (json['dealsPlayed'] as num?)?.toInt(),
     );
   }
 }

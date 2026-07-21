@@ -8,5 +8,7 @@ package com.trustrummy.backend.game.model;
 public enum MatchStatus {
     WAITING,
     IN_PROGRESS,
+    /** Deal scored; waiting for Start Next Deal or the auto-start countdown. */
+    BETWEEN_DEALS,
     COMPLETED
 }

@@ -22,7 +22,7 @@ enum GameDrawSource {
 /// type — per `RULES_ENGINE.md` section 9 it emits distinct types
 /// (`ROOM_STATE`, `DEAL_STARTED`, `TURN_STATE`, `CARD_DRAWN`,
 /// `CARD_DISCARDED`, `PLAYER_DROPPED`, `DECLARE_RESULT`, `SCORE_UPDATE`,
-/// `PLAYER_ELIMINATED`, `MATCH_ENDED`, `ERROR`) that all flow through this
+/// `DEAL_RESULT`, `PLAYER_ELIMINATED`, `MATCH_ENDED`, `ERROR`) that all flow through this
 /// same parsed-event pipeline; [type] tells you which one this is.
 class GameSocketEvent {
   final String type;
@@ -116,6 +116,10 @@ class GameWebSocketService {
       });
 
   void drop() => _send({'type': 'DROP'});
+
+  void startNextDeal() => _send({'type': 'START_NEXT_DEAL'});
+
+  void leaveTable() => _send({'type': 'LEAVE_TABLE'});
 
   void _send(Map<String, dynamic> action) {
     if (_channel == null || _state != SocketConnectionState.connected) {

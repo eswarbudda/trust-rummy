@@ -60,16 +60,21 @@ class RoomApiService {
     int maxPlayers = 2,
     double stakeAmount = 0,
     String gameVariant = 'POOL_101',
+    int? dealsPerMatch,
   }) async {
+    final body = <String, dynamic>{
+      'name': name,
+      'maxPlayers': maxPlayers,
+      'stakeAmount': stakeAmount,
+      'gameVariant': gameVariant,
+    };
+    if (dealsPerMatch != null) {
+      body['dealsPerMatch'] = dealsPerMatch;
+    }
     final response = await http.post(
       ApiConfig.roomsUri,
       headers: _authHeaders(jwt),
-      body: jsonEncode({
-        'name': name,
-        'maxPlayers': maxPlayers,
-        'stakeAmount': stakeAmount,
-        'gameVariant': gameVariant,
-      }),
+      body: jsonEncode(body),
     );
 
     if (response.statusCode != 200) {

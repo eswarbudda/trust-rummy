@@ -89,12 +89,19 @@ abstract class AbstractGameIntegrationTest {
     }
 
     protected Map<String, Object> createRoom(String jwt, BigDecimal stakeAmount, String gameVariant) {
+        return createRoom(jwt, stakeAmount, gameVariant, null);
+    }
+
+    protected Map<String, Object> createRoom(String jwt, BigDecimal stakeAmount, String gameVariant, Integer dealsPerMatch) {
         RoomCreateRequest request = new RoomCreateRequest();
         request.setName("integration-test-room");
         request.setMaxPlayers(2);
         request.setStakeAmount(stakeAmount);
         if (gameVariant != null) {
             request.setGameVariant(GameVariant.valueOf(gameVariant));
+        }
+        if (dealsPerMatch != null) {
+            request.setDealsPerMatch(dealsPerMatch);
         }
 
         HttpEntity<RoomCreateRequest> entity = new HttpEntity<>(request, authHeaders(jwt));

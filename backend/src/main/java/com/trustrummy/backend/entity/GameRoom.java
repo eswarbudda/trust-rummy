@@ -52,6 +52,13 @@ public class GameRoom {
     @Builder.Default
     private GameVariant gameVariant = GameVariant.POOL_101;
 
+    /**
+     * Deals in a POINTS / DEALS match. Null for pool variants. When null for
+     * POINTS at match start, the engine applies the Points default (2).
+     */
+    @Column(name = "deals_per_match")
+    private Integer dealsPerMatch;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     @Builder.Default

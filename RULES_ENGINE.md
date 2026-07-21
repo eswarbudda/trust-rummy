@@ -27,8 +27,13 @@ All gameplay mutation is funneled through `RummyEngineService`, which acquires `
 ### 2.1 Match lifecycle (`MatchStatus`)
 
 ```
-WAITING --(host sends START_MATCH, >=2 seated players)--> IN_PROGRESS --(1 active player remains, or POINTS variant deal ends)--> COMPLETED
+WAITING --(host START_MATCH)--> IN_PROGRESS
+IN_PROGRESS --(deal ends, match continues)--> BETWEEN_DEALS
+BETWEEN_DEALS --(START_NEXT_DEAL | 10s auto timer)--> IN_PROGRESS
+IN_PROGRESS|BETWEEN_DEALS --(match complete)--> COMPLETED
 ```
+
+Match completes when: ≤1 active player remains, a heads-up drop walkover occurs, or (POINTS / DEALS) `dealNumber >= dealsPerMatch`.
 
 The moment a match reaches `COMPLETED`, `RummyEngineService#finishMatch` evicts its `MatchState` from `GameStateService` (`gameStateService.remove(roomCode)`) — a naturally-finished match never lingers in memory for the rest of the process's lifetime; only a still-`WAITING`/`IN_PROGRESS` room being disbanded via `RoomService` removed it previously. The durable record from here on is the DB `GameSession` row (§10); the WebSocket channel has nothing further to say about a finished match, and a room can never restart without going through the lobby's `WAITING` flow again.
 
@@ -38,7 +43,7 @@ The moment a match reaches `COMPLETED`, `RummyEngineService#finishMatch` evicts 
 IN_PROGRESS --(valid DECLARE | wrong DECLARE | drops down to 1 active player)--> COMPLETED
 ```
 
-Each deal that completes while >= 2 players remain active in the match (Pool variants only) immediately triggers the next deal (`RummyEngineService#startNewDeal`).
+When a deal completes and the match is **not** over, the engine enters `BETWEEN_DEALS`, broadcasts `DEAL_RESULT`, and waits for `START_NEXT_DEAL` or the auto-next-deal countdown (default 10s) before `startNewDeal`. Gameplay actions are rejected while `BETWEEN_DEALS`.
 
 ### 2.3 Turn phase (`TurnPhase`), per current turn-holder
 
@@ -69,7 +74,9 @@ ACTIVE --(last player standing at match end)--> WINNER
 | Field | Default | Notes |
 |---|---|---|
 | `maxPlayers` | 6 | Copied from the room's `maxPlayers` (2–6) at match start |
-| `gameVariant` | `POOL_101` | `POOL_101` \| `POOL_201` \| `POINTS` |
+| `gameVariant` | `POOL_101` | `POOL_101` \| `POOL_201` \| `POINTS` \| `DEALS` |
+| `dealsPerMatch` | `2` for POINTS/DEALS; `null` for pool | Match length for fixed-deal variants |
+| `autoNextDealSeconds` | 10 | Countdown before auto `startNewDeal` from `BETWEEN_DEALS` |
 | `penaltyFirstDrop` | 20 | Points for dropping on a player's first turn of a deal |
 | `penaltyMiddleDrop` | 40 | Points for dropping on any later turn |
 | `penaltyMaxCap` | 80 | Hard ceiling on any single deal's loss for one player |
@@ -77,7 +84,7 @@ ACTIVE --(last player standing at match end)--> WINNER
 | `cardsPerPlayer` | 13 | |
 | `turnTimeoutSeconds` | 30 | Countdown before `RummyEngineService` auto-plays the turn |
 
-`GameVariant.eliminationThreshold()`: `POOL_101` → 101, `POOL_201` → 201, `POINTS` → unreachable (no elimination; a `POINTS` match is exactly one deal).
+`GameVariant.eliminationThreshold()`: `POOL_101` → 101, `POOL_201` → 201, `POINTS`/`DEALS` → unreachable (no elimination).
 
 ## 4. Deck & wild joker
 
@@ -135,7 +142,9 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 | `type` | Extra fields | When legal |
 |---|---|---|
 | `START_MATCH` | — | Match `WAITING`, sender is the room's host, >= 2 seated players |
-| `DRAW_CARD` | `source`: `CLOSED` \| `OPEN` | Your turn, `AWAITING_DRAW` |
+| `START_NEXT_DEAL` | — | Match `BETWEEN_DEALS`, sender is an active player |
+| `LEAVE_TABLE` | — | Match `BETWEEN_DEALS`, sender is an active player. Ends the **entire match** immediately (`MATCH_ENDED`); remaining players ranked by lowest cumulative score (sole remaining player wins). |
+| `DRAW_CARD` | `source`: `CLOSED` \| `OPEN` | Your turn, `AWAITING_DRAW` (not during `BETWEEN_DEALS`) |
 | `DISCARD_CARD` | `cardCode` (e.g. `"10H"`, `"AS"`, `"JK"`) | Your turn, `AWAITING_DISCARD` |
 | `DECLARE` | `cardCode` — the 14th card you're setting aside; the remaining 13 are validated | Your turn, `AWAITING_DISCARD` |
 | `DROP` | — | Your turn, `AWAITING_DRAW` (before drawing) |
@@ -145,6 +154,8 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 { "type": "DISCARD_CARD", "cardCode": "10H" }
 { "type": "DECLARE", "cardCode": "7S" }
 { "type": "DROP" }
+{ "type": "START_NEXT_DEAL" }
+{ "type": "LEAVE_TABLE" }
 ```
 
 ### Outbound (`GameEvent`) — flat JSON, `type` + event-specific fields
@@ -152,15 +163,16 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 | `type` | Fields |
 |---|---|
 | `ROOM_STATE` | Sent once on connect: `roomCode`, `matchStatus`, and (if a deal is live) the full deal snapshot below |
-| `DEAL_STARTED` | `dealNumber`, `wildValue`, `cutJokerCard`, `discardTop`, `closedDeckCount`, `currentTurnUserId`, `turnPhase`, `players[]` |
+| `DEAL_STARTED` | `dealNumber`, `matchStatus`, `wildValue`, `cutJokerCard`, `discardTop`, `closedDeckCount`, `currentTurnUserId`, `turnPhase`, `players[]` |
 | `TURN_STATE` | Same deal snapshot shape, sent whenever the turn advances |
 | `CARD_DRAWN` | Same deal snapshot shape (drawer's own `hand` included only for them) |
 | `CARD_DISCARDED` | Same deal snapshot shape |
 | `PLAYER_DROPPED` | Same deal snapshot shape |
 | `DECLARE_RESULT` | `userId`, `valid`, `reason`, `melds[]` (`{type, cards[]}`) |
 | `SCORE_UPDATE` | `dealNumber`, `scores[]` (`{userId, username, roundPoints, cumulativeScore, matchStatus}`) |
-| `PLAYER_ELIMINATED` | `userId` |
-| `MATCH_ENDED` | `winnerUserId`, `finalScores` (`{userId: cumulativeScore}`) |
+| `DEAL_RESULT` | `dealNumber`, `dealsPlayed`, `dealsPerMatch`, `winnerUserId`, `matchStatus`, `matchComplete`, `scores[]`, `eliminatedUserIds[]`, `autoNextDealSeconds` |
+| `PLAYER_ELIMINATED` | `userId` (optional `reason`, e.g. `LEFT_TABLE`) |
+| `MATCH_ENDED` | `winnerUserId`, `finalScores` (`{userId: cumulativeScore}`), `dealsPlayed` |
 | `ERROR` | `message` |
 
 `players[]` entries (deal snapshot shape): `{userId, username, seatNumber, cumulativeScore, matchStatus, roundStatus, handSize, hand? }` — `hand` only present for the viewer's own entry.

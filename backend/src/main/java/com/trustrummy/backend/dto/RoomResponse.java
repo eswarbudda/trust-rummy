@@ -23,6 +23,7 @@ public class RoomResponse {
     private String status;
     private String gameType;
     private String gameVariant;
+    private Integer dealsPerMatch;
     /** Only populated by endpoints that already have the seated players loaded (create/join). */
     private List<RoomPlayerSummary> players;
 
@@ -40,6 +41,7 @@ public class RoomResponse {
                 .status(room.getStatus().name())
                 .gameType(room.getGameType() != null ? room.getGameType().name() : null)
                 .gameVariant(room.getGameVariant() != null ? room.getGameVariant().name() : null)
+                .dealsPerMatch(room.getDealsPerMatch())
                 .players(seatedPlayers == null ? null : seatedPlayers.stream()
                         .map(rp -> RoomPlayerSummary.builder()
                                 .userId(rp.getUser().getId())

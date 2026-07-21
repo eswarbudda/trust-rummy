@@ -96,10 +96,10 @@ class MatchLifecycleCleanupIntegrationTest extends AbstractGameIntegrationTest {
         String guestToken = (String) guest.get("token");
 
         // POINTS variant: a wrong DECLARE voids the round for everyone (no
-        // winner) and, with no elimination threshold, ends the match
+        // winner). dealsPerMatch=1 so the voided deal ends the match
         // immediately with matchWinnerId == null — the exact case that used
         // to be recorded as COMPLETED indistinguishably from a real win.
-        Map<String, Object> room = createRoom(hostToken, BigDecimal.ZERO, "POINTS");
+        Map<String, Object> room = createRoom(hostToken, BigDecimal.ZERO, "POINTS", 1);
         String roomCode = (String) room.get("roomCode");
         long hostUserId = firstPlayerUserId(room);
         Map<String, Object> joined = joinRoom(guestToken, roomCode);

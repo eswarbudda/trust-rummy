@@ -4,7 +4,9 @@ import '../../models/card.dart' as rummy;
 import '../../models/game_state.dart';
 import '../../theme/rummy_colors.dart';
 import '../../theme/rummy_layout.dart';
+import 'deal_result_dialog.dart';
 import 'hand_view.dart';
+import 'match_summary_dialog.dart';
 import 'rummy_action_bar.dart';
 import 'rummy_table_board.dart';
 
@@ -15,6 +17,7 @@ import 'rummy_table_board.dart';
 enum RummyGameUiMode {
   waiting,
   active,
+  dealResult,
   completed,
   disconnected,
 }
@@ -51,12 +54,18 @@ class RummyGameView extends StatelessWidget {
   final bool canDiscardSelected;
 
   /// When non-null and [mode] is [RummyGameUiMode.completed], shows the
-  /// Points-Rummy result overlay (summary + Play Again / Leave Table).
+  /// match summary overlay.
   final MatchEndedEvent? matchResult;
   final String? matchWinnerName;
   final String? lastDealScoreLines;
   /// Optional userId → username map for the result overlay score rows.
   final Map<int, String>? playerNames;
+
+  /// Between-deal result ([RummyGameUiMode.dealResult]).
+  final DealResultEvent? dealResult;
+  final String? dealWinnerName;
+  final VoidCallback? onStartNextDeal;
+
   final VoidCallback? onPlayAgain;
   final VoidCallback? onLeaveTable;
 
@@ -109,6 +118,9 @@ class RummyGameView extends StatelessWidget {
     this.matchWinnerName,
     this.lastDealScoreLines,
     this.playerNames,
+    this.dealResult,
+    this.dealWinnerName,
+    this.onStartNextDeal,
     this.onPlayAgain,
     this.onLeaveTable,
     this.headerTrailing,
@@ -141,6 +153,7 @@ class RummyGameView extends StatelessWidget {
       case RummyGameUiMode.disconnected:
         return 'Disconnected — check your connection';
       case RummyGameUiMode.completed:
+      case RummyGameUiMode.dealResult:
         return null; // result overlay owns this state
       case RummyGameUiMode.active:
         return null;
@@ -217,7 +230,25 @@ class RummyGameView extends StatelessWidget {
                   ),
                 ],
               ),
-              if (mode == RummyGameUiMode.completed && matchResult != null) _matchResultOverlay(),
+              if (mode == RummyGameUiMode.dealResult && dealResult != null)
+                DealResultDialog(
+                  result: dealResult!,
+                  winnerName: dealWinnerName,
+                  onStartNextDeal: onStartNextDeal,
+                  onLeaveTable: onLeaveTable,
+                ),
+              if (mode == RummyGameUiMode.completed && matchResult != null)
+                MatchSummaryDialog(
+                  result: matchResult!,
+                  winnerName: matchWinnerName,
+                  lastDealScoreLines: lastDealScoreLines,
+                  playerNames: playerNames,
+                  selfUserId: me.userId,
+                  selfUsername: me.username,
+                  opponents: opponents,
+                  onPlayAgain: onPlayAgain,
+                  onLeaveTable: onLeaveTable,
+                ),
             ],
           ),
         ),
@@ -234,7 +265,9 @@ class RummyGameView extends StatelessWidget {
             color: Colors.black.withOpacity(0.4),
             borderRadius: BorderRadius.circular(10),
             child: InkWell(
-              onTap: mode == RummyGameUiMode.completed ? onLeaveTable : onExit,
+              onTap: (mode == RummyGameUiMode.completed || mode == RummyGameUiMode.dealResult)
+                  ? onLeaveTable
+                  : onExit,
               borderRadius: BorderRadius.circular(10),
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -412,145 +445,6 @@ class RummyGameView extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// In-tree post-game UI — same on every client; no Navigator dialog races.
-  Widget _matchResultOverlay() {
-    final ended = matchResult!;
-    final winner = matchWinnerName ?? (ended.winnerUserId != null ? 'Player ${ended.winnerUserId}' : '—');
-    final scores = ended.finalScores.entries.map((e) {
-      String? name = playerNames?[e.key];
-      if (name == null && e.key == me.userId) name = me.username;
-      if (name == null) {
-        for (final p in opponents) {
-          if (p.userId == e.key) {
-            name = p.username;
-            break;
-          }
-        }
-      }
-      return MapEntry(name ?? 'Player ${e.key}', e.value);
-    }).toList();
-
-    return Positioned.fill(
-      child: Material(
-        color: Colors.black.withOpacity(0.72),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: RummyColors.panelBg,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: RummyColors.gold.withOpacity(0.45), width: 1.4),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.45), blurRadius: 24, offset: const Offset(0, 8)),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Match Result',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 20,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Winner: $winner',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: RummyColors.gold,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Final scores',
-                        style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      for (final row in scores)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(row.key, style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                              ),
-                              Text(
-                                '${row.value}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      if (lastDealScoreLines != null && lastDealScoreLines!.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Last deal',
-                          style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(lastDealScoreLines!, style: const TextStyle(color: Colors.white60, fontSize: 13)),
-                      ],
-                      const SizedBox(height: 22),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: onLeaveTable,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white70,
-                                side: const BorderSide(color: Colors.white24),
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                              ),
-                              child: const Text('Leave Table'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: onPlayAgain,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: RummyColors.showGreen,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                              ),
-                              child: const Text('Play Again'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Play Again returns you to the lobby to start a new match.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
           ),
         ),
       ),

@@ -10,6 +10,7 @@ public enum EventType {
     PLAYER_DROPPED,
     DECLARE_RESULT,
     SCORE_UPDATE,
+    DEAL_RESULT,
     PLAYER_ELIMINATED,
     MATCH_ENDED,
     ERROR

@@ -98,61 +98,13 @@ class CardPilesView extends StatelessWidget {
               bottom: jokerBottom,
               width: jokerLayoutW,
               height: jokerLayoutH,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(9),
-                      boxShadow: [
-                        BoxShadow(
-                          color: RummyColors.gold.withOpacity(0.55),
-                          blurRadius: 10,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: RotatedBox(
-                      quarterTurns: 1,
-                      child: PlayingCardView(
-                        card: joker,
-                        isWild: true,
-                        width: _w,
-                        height: _h,
-                      ),
-                    ),
-                  ),
-                  // Badge sits on the visible left peek (not under the deck).
-                  Positioned(
-                    left: 4 * L.scale,
-                    top: 4 * L.scale,
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 7 * L.scale, vertical: 3.5 * L.scale),
-                      decoration: BoxDecoration(
-                        gradient: RummyLayout.jokerChipGradient,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.white, width: 1.3),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.45),
-                            blurRadius: 5,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        'JOKER',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11 * L.scale,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              child: RotatedBox(
+                quarterTurns: 1,
+                child: PlayingCardView(
+                  card: joker,
+                  width: _w,
+                  height: _h,
+                ),
               ),
             ),
           for (var i = 0; i < stackDepth; i++)

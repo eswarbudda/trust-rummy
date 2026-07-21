@@ -29,4 +29,12 @@ public class RoomCreateRequest {
 
     /** Defaults to POOL_101 if omitted. */
     private GameVariant gameVariant;
+
+    /**
+     * Deals in a POINTS / DEALS match. Ignored for pool variants.
+     * POINTS defaults to 2 when omitted; DEALS defaults to 2 when omitted.
+     */
+    @Min(1)
+    @Max(50)
+    private Integer dealsPerMatch;
 }

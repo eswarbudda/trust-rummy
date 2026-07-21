@@ -45,6 +45,27 @@ class _GameTestScreenState extends State<GameTestScreen> {
   List<RoomPlayerSummary> _seatedPlayers = [];
   bool _isReady = false;
 
+  /// Room variant for Create Room — backend defaults to POOL_101 if omitted.
+  String _selectedVariant = 'POOL_101';
+
+  /// Variant locked in for the current room (from create/join/get). Null until a room exists.
+  String? _roomVariant;
+
+  static const _variants = <({String value, String label})>[
+    (value: 'POOL_101', label: 'Pool 101'),
+    (value: 'POOL_201', label: 'Pool 201'),
+    (value: 'POINTS', label: 'Points'),
+    (value: 'DEALS', label: 'Deals'),
+  ];
+
+  String get _variantLabel {
+    final code = _roomVariant ?? _selectedVariant;
+    for (final v in _variants) {
+      if (v.value == code) return v.label;
+    }
+    return code;
+  }
+
   /// Surfaced prominently (separately from [_errorMessage], which is only
   /// for REST/setup failures) whenever an `ERROR` (server-rejected action,
   /// e.g. "It is not your turn") or `CLIENT_ERROR` (the socket wasn't
@@ -136,6 +157,7 @@ class _GameTestScreenState extends State<GameTestScreen> {
           myUserId: _myUserId,
           myUsername: _myUsername,
           initialDealJson: _lastDealJson,
+          gameVariantLabel: _variantLabel,
         ),
       ),
     );
@@ -203,9 +225,18 @@ class _GameTestScreenState extends State<GameTestScreen> {
         if (_tokenController.text.isEmpty) {
           throw Exception('Quick-register (or paste a JWT) first');
         }
-        final room = await _roomApi.createRoom(jwt: _tokenController.text);
+        final dealsPerMatch =
+            (_selectedVariant == 'POINTS' || _selectedVariant == 'DEALS') ? 2 : null;
+        final room = await _roomApi.createRoom(
+          jwt: _tokenController.text,
+          gameVariant: _selectedVariant,
+          dealsPerMatch: dealsPerMatch,
+        );
         _roomCodeController.text = room.roomCode;
-        setState(() => _seatedPlayers = room.players);
+        setState(() {
+          _seatedPlayers = room.players;
+          _roomVariant = room.gameVariant ?? _selectedVariant;
+        });
       });
 
   /// Actually seats the current JWT's user into an existing room — needed
@@ -221,7 +252,10 @@ class _GameTestScreenState extends State<GameTestScreen> {
           jwt: _tokenController.text.trim(),
           roomCode: _roomCodeController.text.trim(),
         );
-        setState(() => _seatedPlayers = room.players);
+        setState(() {
+          _seatedPlayers = room.players;
+          _roomVariant = room.gameVariant ?? _roomVariant;
+        });
       });
 
   /// Polls the current room's lobby state via REST (no WebSocket needed).
@@ -233,7 +267,10 @@ class _GameTestScreenState extends State<GameTestScreen> {
           jwt: _tokenController.text.trim(),
           roomCode: _roomCodeController.text.trim(),
         );
-        setState(() => _seatedPlayers = room.players);
+        setState(() {
+          _seatedPlayers = room.players;
+          _roomVariant = room.gameVariant ?? _roomVariant;
+        });
       });
 
   /// Un-seats the caller. If the caller is the host, the whole room is disbanded.
@@ -248,6 +285,7 @@ class _GameTestScreenState extends State<GameTestScreen> {
         setState(() {
           _seatedPlayers = [];
           _isReady = false;
+          _roomVariant = null;
         });
       });
 
@@ -260,7 +298,10 @@ class _GameTestScreenState extends State<GameTestScreen> {
           jwt: _tokenController.text.trim(),
           roomCode: _roomCodeController.text.trim(),
         );
-        setState(() => _seatedPlayers = []);
+        setState(() {
+          _seatedPlayers = [];
+          _roomVariant = null;
+        });
       });
 
   /// Toggles the caller's ready flag. Purely informational — START_MATCH doesn't require it.
@@ -489,7 +530,53 @@ class _GameTestScreenState extends State<GameTestScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Text(
+            'Select game type (before Create Room)',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final v in _variants)
+                ChoiceChip(
+                  label: Text(v.label),
+                  selected: _selectedVariant == v.value,
+                  onSelected: (_busy || _connected || _roomVariant != null)
+                      ? null
+                      : (selected) {
+                          if (!selected) return;
+                          setState(() => _selectedVariant = v.value);
+                        },
+                ),
+            ],
+          ),
+          if (_roomVariant != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.teal.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.tealAccent.withOpacity(0.45)),
+              ),
+              child: Text(
+                'Room variant: $_variantLabel (${_roomVariant!})'
+                '${_selectedVariant == 'POINTS' || _selectedVariant == 'DEALS' || _roomVariant == 'POINTS' || _roomVariant == 'DEALS' ? ' · 2 deals' : ''}',
+                style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 6),
+            Text(
+              'Selected: $_variantLabel — tap Create Room to use it.',
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(

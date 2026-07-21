@@ -101,9 +101,33 @@ public class RummyEngineService implements GameEngine {
             return;
         }
 
+        if (action.getType() == ActionType.START_NEXT_DEAL) {
+            match.getLock().lock();
+            try {
+                handleStartNextDeal(match, userId);
+            } finally {
+                match.getLock().unlock();
+            }
+            return;
+        }
+
+        if (action.getType() == ActionType.LEAVE_TABLE) {
+            match.getLock().lock();
+            try {
+                handleLeaveTable(match, userId);
+            } finally {
+                match.getLock().unlock();
+            }
+            return;
+        }
+
         match.getLock().lock();
         try {
             Deal deal = match.getCurrentDeal();
+            if (match.getStatus() == MatchStatus.BETWEEN_DEALS) {
+                sendError(roomCode, userId, "Deal result is showing — wait for the next deal");
+                return;
+            }
             if (match.getStatus() != MatchStatus.IN_PROGRESS || deal == null || deal.getStatus() != DealStatus.IN_PROGRESS) {
                 sendError(roomCode, userId, "No active deal in progress");
                 return;
@@ -177,9 +201,12 @@ public class RummyEngineService implements GameEngine {
             return; // rejection/refund already handled by settlement; match state untouched
         }
 
+        GameVariant variant = room.getGameVariant() != null ? room.getGameVariant() : GameVariant.POOL_101;
+        Integer dealsPerMatch = resolveDealsPerMatch(variant, room.getDealsPerMatch());
         GameConfig config = GameConfig.builder()
                 .maxPlayers(room.getMaxPlayers())
-                .gameVariant(room.getGameVariant() != null ? room.getGameVariant() : GameVariant.POOL_101)
+                .gameVariant(variant)
+                .dealsPerMatch(dealsPerMatch)
                 .build();
         match.setConfig(config);
 
@@ -204,7 +231,16 @@ public class RummyEngineService implements GameEngine {
     }
 
     private void startNewDeal(MatchState match) {
+        turnManager.cancel(match.getRoomCode());
+        match.setStatus(MatchStatus.IN_PROGRESS);
+
         List<Long> activePlayers = match.activeMatchPlayerIds();
+        if (activePlayers.size() < 2) {
+            Long sole = activePlayers.isEmpty() ? null : activePlayers.get(0);
+            finishMatch(match, sole);
+            return;
+        }
+
         int dealNo = match.getDealNumber() + 1;
         match.setDealNumber(dealNo);
 
@@ -283,7 +319,6 @@ public class RummyEngineService implements GameEngine {
                     GameEvent.of(EventType.PLAYER_ELIMINATED).with("userId", eliminatedId));
         }
 
-        boolean pointsVariant = match.getConfig().getGameVariant() == GameVariant.POINTS;
         List<Long> stillActive = match.activeMatchPlayerIds();
 
         // Heads-up walkover: when exactly two seats started and this deal
@@ -298,14 +333,140 @@ public class RummyEngineService implements GameEngine {
                 && droppedThisDeal >= 1
                 && deal.activePlayerIds().size() <= 1;
 
-        if (pointsVariant || stillActive.size() <= 1 || headsUpDropWalkover) {
-            Long matchWinner = (pointsVariant || headsUpDropWalkover)
-                    ? winnerUserId
-                    : (stillActive.isEmpty() ? null : stillActive.get(0));
+        boolean matchComplete = isMatchComplete(match, stillActive, headsUpDropWalkover);
+
+        if (matchComplete) {
+            Long matchWinner = resolveMatchWinner(match, winnerUserId, wrongDeclareVoid, headsUpDropWalkover, stillActive);
             finishMatch(match, matchWinner);
-        } else {
-            startNewDeal(match);
+            return;
         }
+
+        enterBetweenDeals(match, deal, winnerUserId, roundPoints, newlyEliminated);
+    }
+
+    private boolean isMatchComplete(MatchState match, List<Long> stillActive, boolean headsUpDropWalkover) {
+        if (headsUpDropWalkover || stillActive.size() <= 1) {
+            return true;
+        }
+        GameVariant variant = match.getConfig().getGameVariant();
+        Integer dealsPerMatch = match.getConfig().getDealsPerMatch();
+        return variant.isFixedDealMatch()
+                && dealsPerMatch != null
+                && match.getDealNumber() >= dealsPerMatch;
+    }
+
+    private Long resolveMatchWinner(MatchState match, Long dealWinnerUserId, boolean wrongDeclareVoid,
+                                    boolean headsUpDropWalkover, List<Long> stillActive) {
+        if (headsUpDropWalkover) {
+            return dealWinnerUserId;
+        }
+        if (stillActive.size() == 1) {
+            return stillActive.get(0);
+        }
+        if (stillActive.isEmpty()) {
+            return null;
+        }
+        if (wrongDeclareVoid) {
+            // Voided final Points/Deals deal with multiple players still active → ABORTED.
+            return null;
+        }
+        // Points / Deals: lowest cumulative score wins.
+        return stillActive.stream()
+                .min(Comparator
+                        .comparingInt((Long id) -> match.getScorecards().get(id).getCumulativeScore())
+                        .thenComparingLong(id -> id))
+                .orElse(null);
+    }
+
+    private void enterBetweenDeals(MatchState match, Deal deal, Long winnerUserId,
+                                   Map<Long, Integer> roundPoints, List<Long> newlyEliminated) {
+        match.setStatus(MatchStatus.BETWEEN_DEALS);
+        match.touch();
+
+        int autoSeconds = match.getConfig().getAutoNextDealSeconds();
+        broadcastDealResult(match, deal, winnerUserId, roundPoints, newlyEliminated, false, autoSeconds);
+        scheduleNextDeal(match);
+    }
+
+    private void scheduleNextDeal(MatchState match) {
+        int seconds = Math.max(1, match.getConfig().getAutoNextDealSeconds());
+        String roomCode = match.getRoomCode();
+        turnManager.schedule(roomCode, seconds, () -> onNextDealTimeout(roomCode));
+    }
+
+    private void onNextDealTimeout(String roomCode) {
+        MatchState match = gameStateService.get(roomCode);
+        if (match == null) {
+            return;
+        }
+        match.getLock().lock();
+        try {
+            if (match.getStatus() != MatchStatus.BETWEEN_DEALS) {
+                return;
+            }
+            startNewDeal(match);
+        } finally {
+            match.getLock().unlock();
+        }
+    }
+
+    private void handleStartNextDeal(MatchState match, Long userId) {
+        if (match.getStatus() != MatchStatus.BETWEEN_DEALS) {
+            sendError(match.getRoomCode(), userId, "No deal result pending");
+            return;
+        }
+        PlayerScorecard scorecard = match.getScorecards().get(userId);
+        if (scorecard == null || scorecard.getMatchStatus() != MatchPlayerStatus.ACTIVE) {
+            sendError(match.getRoomCode(), userId, "Only active players can start the next deal");
+            return;
+        }
+        turnManager.cancel(match.getRoomCode());
+        startNewDeal(match);
+    }
+
+    private void handleLeaveTable(MatchState match, Long userId) {
+        if (match.getStatus() != MatchStatus.BETWEEN_DEALS) {
+            sendError(match.getRoomCode(), userId, "Leave table from result is only available between deals");
+            return;
+        }
+        PlayerScorecard scorecard = match.getScorecards().get(userId);
+        if (scorecard == null || scorecard.getMatchStatus() != MatchPlayerStatus.ACTIVE) {
+            sendError(match.getRoomCode(), userId, "You are not an active player at this table");
+            return;
+        }
+
+        // Any leave from the deal-result screen ends the whole match so every
+        // remaining client can show Match Summary (no silent continue).
+        turnManager.cancel(match.getRoomCode());
+        scorecard.setMatchStatus(MatchPlayerStatus.ELIMINATED);
+        match.touch();
+        broadcastService.broadcast(match.getRoomCode(),
+                GameEvent.of(EventType.PLAYER_ELIMINATED).with("userId", userId).with("reason", "LEFT_TABLE"));
+
+        List<Long> stillActive = match.activeMatchPlayerIds();
+        Long winner;
+        if (stillActive.isEmpty()) {
+            winner = null;
+        } else if (stillActive.size() == 1) {
+            winner = stillActive.get(0);
+        } else {
+            winner = stillActive.stream()
+                    .min(Comparator
+                            .comparingInt((Long id) -> match.getScorecards().get(id).getCumulativeScore())
+                            .thenComparingLong(id -> id))
+                    .orElse(null);
+        }
+        finishMatch(match, winner);
+    }
+
+    private static Integer resolveDealsPerMatch(GameVariant variant, Integer roomDealsPerMatch) {
+        if (!variant.isFixedDealMatch()) {
+            return null;
+        }
+        if (roomDealsPerMatch != null) {
+            return roomDealsPerMatch;
+        }
+        return GameConfig.DEFAULT_POINTS_DEALS_PER_MATCH;
     }
 
     private void finishMatch(MatchState match, Long matchWinnerId) {
@@ -327,7 +488,8 @@ public class RummyEngineService implements GameEngine {
 
         broadcastService.broadcast(match.getRoomCode(), GameEvent.of(EventType.MATCH_ENDED)
                 .with("winnerUserId", matchWinnerId)
-                .with("finalScores", finalScores));
+                .with("finalScores", finalScores)
+                .with("dealsPlayed", match.getDealNumber()));
 
         // The DB row (GameSession/RoomPlayer, flushed async above) is now the
         // durable record of this match; nothing further reads this in-memory
@@ -703,6 +865,30 @@ public class RummyEngineService implements GameEngine {
     }
 
     private void broadcastScoreUpdate(MatchState match, Deal deal, Map<Long, Integer> roundPoints) {
+        List<Map<String, Object>> table = buildScoreRows(match, roundPoints);
+        broadcastService.broadcast(match.getRoomCode(), GameEvent.of(EventType.SCORE_UPDATE)
+                .with("dealNumber", deal.getDealNumber())
+                .with("scores", table));
+    }
+
+    private void broadcastDealResult(MatchState match, Deal deal, Long winnerUserId,
+                                     Map<Long, Integer> roundPoints, List<Long> newlyEliminated,
+                                     boolean matchComplete, int autoNextDealSeconds) {
+        List<Map<String, Object>> table = buildScoreRows(match, roundPoints);
+        Integer dealsPerMatch = match.getConfig().getDealsPerMatch();
+        broadcastService.broadcast(match.getRoomCode(), GameEvent.of(EventType.DEAL_RESULT)
+                .with("dealNumber", deal.getDealNumber())
+                .with("dealsPlayed", deal.getDealNumber())
+                .with("dealsPerMatch", dealsPerMatch)
+                .with("winnerUserId", winnerUserId)
+                .with("matchStatus", match.getStatus().name())
+                .with("matchComplete", matchComplete)
+                .with("scores", table)
+                .with("eliminatedUserIds", newlyEliminated)
+                .with("autoNextDealSeconds", matchComplete ? 0 : autoNextDealSeconds));
+    }
+
+    private List<Map<String, Object>> buildScoreRows(MatchState match, Map<Long, Integer> roundPoints) {
         List<Map<String, Object>> table = new ArrayList<>();
         for (Long userId : match.getSeatOrder()) {
             PlayerScorecard sc = match.getScorecards().get(userId);
@@ -714,9 +900,7 @@ public class RummyEngineService implements GameEngine {
             row.put("matchStatus", sc.getMatchStatus().name());
             table.add(row);
         }
-        broadcastService.broadcast(match.getRoomCode(), GameEvent.of(EventType.SCORE_UPDATE)
-                .with("dealNumber", deal.getDealNumber())
-                .with("scores", table));
+        return table;
     }
 
     private void broadcastDeclareResult(MatchState match, Long declarerUserId, DeclareResult result) {

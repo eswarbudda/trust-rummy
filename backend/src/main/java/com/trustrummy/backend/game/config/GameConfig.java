@@ -17,6 +17,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class GameConfig {
 
+    public static final int DEFAULT_POINTS_DEALS_PER_MATCH = 2;
+    public static final int DEFAULT_AUTO_NEXT_DEAL_SECONDS = 10;
+
     @Builder.Default
     private int maxPlayers = 6;
 
@@ -40,6 +43,16 @@ public class GameConfig {
 
     @Builder.Default
     private int turnTimeoutSeconds = 30;
+
+    /**
+     * How many deals make up a Points/Deals match. {@code null} for pool
+     * variants (match ends via elimination). POINTS defaults to
+     * {@link #DEFAULT_POINTS_DEALS_PER_MATCH} when the room omits it.
+     */
+    private Integer dealsPerMatch;
+
+    @Builder.Default
+    private int autoNextDealSeconds = DEFAULT_AUTO_NEXT_DEAL_SECONDS;
 
     public int eliminationThreshold() {
         return gameVariant.getEliminationThreshold();

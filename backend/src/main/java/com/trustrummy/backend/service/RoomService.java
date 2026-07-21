@@ -52,6 +52,7 @@ public class RoomService {
                 .stakeAmount(request.getStakeAmount())
                 .gameType(request.getGameType() != null ? request.getGameType() : GameType.RUMMY)
                 .gameVariant(request.getGameVariant() != null ? request.getGameVariant() : GameVariant.POOL_101)
+                .dealsPerMatch(request.getDealsPerMatch())
                 .status(RoomStatus.WAITING)
                 .createdBy(creator)
                 .build();
