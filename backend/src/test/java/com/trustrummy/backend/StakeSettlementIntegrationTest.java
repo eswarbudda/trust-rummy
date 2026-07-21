@@ -29,9 +29,9 @@ class StakeSettlementIntegrationTest extends AbstractGameIntegrationTest {
         deposit(hostToken, new BigDecimal("100.00"));
         deposit(guestToken, new BigDecimal("100.00"));
 
-        // POINTS variant: no elimination threshold, so a single dropped
-        // player ends the match immediately and deterministically — ideal
-        // for asserting the payout without simulating a full pool match.
+        // POINTS is a single-deal match: a DROP ends the match immediately and
+        // deterministically — ideal for asserting the payout without simulating
+        // a full pool or multi-deal Deals match.
         Map<String, Object> room = createRoom(hostToken, new BigDecimal("25.00"), "POINTS");
         String roomCode = (String) room.get("roomCode");
         long hostUserId = firstPlayerUserId(room);
@@ -61,8 +61,8 @@ class StakeSettlementIntegrationTest extends AbstractGameIntegrationTest {
             String winnerToken = hostIsFirstMover ? guestToken : hostToken;
             long winnerUserId = hostIsFirstMover ? guestUserId : hostUserId;
 
-            // The player on turn drops before drawing — with only 2 seats and
-            // a POINTS variant, this ends the deal (and the match) at once.
+            // The player on turn drops before drawing — heads-up DROP on POINTS
+            // ends the (single) deal and the match at once.
             firstMover.send(Map.of("type", "DROP"));
             assertEvent(firstMover, "PLAYER_DROPPED");
             assertEvent(secondMover, "PLAYER_DROPPED");

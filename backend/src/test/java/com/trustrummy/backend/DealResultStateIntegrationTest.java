@@ -18,17 +18,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DealResultStateIntegrationTest extends AbstractGameIntegrationTest {
 
     @Test
-    void poolDealPausesWithDealResultUntilStartNextDeal() throws Exception {
+    void dealsDealPausesWithDealResultUntilStartNextDeal() throws Exception {
         long unique = System.nanoTime();
         Map<String, Object> host = register("result_host_" + unique);
         Map<String, Object> guest = register("result_guest_" + unique);
         String hostToken = (String) host.get("token");
         String guestToken = (String) guest.get("token");
 
-        // Free-play POOL_101: force a deal end via DROP without ending the match
-        // (3 seats would be needed for drop without heads-up walkover — use
-        // POINTS with dealsPerMatch=2 and a wrong declare to void deal 1).
-        Map<String, Object> room = createRoom(hostToken, BigDecimal.ZERO, "POINTS", 2);
+        // DEALS with dealsPerMatch=2: a wrong DECLARE voids deal 1 without
+        // ending the match, so we land in BETWEEN_DEALS (POINTS is single-deal
+        // and would MATCH_ENDED immediately).
+        Map<String, Object> room = createRoom(hostToken, BigDecimal.ZERO, "DEALS", 2);
         String roomCode = (String) room.get("roomCode");
         long hostUserId = firstPlayerUserId(room);
         Map<String, Object> joined = joinRoom(guestToken, roomCode);

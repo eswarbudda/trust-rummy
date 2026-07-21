@@ -38,8 +38,8 @@ class MatchLifecycleCleanupIntegrationTest extends AbstractGameIntegrationTest {
         String hostToken = (String) host.get("token");
         String guestToken = (String) guest.get("token");
 
-        // POINTS variant + free play: a single DROP ends the match at once,
-        // deterministically, without needing stake bookkeeping (already
+        // POINTS is a single-deal match + free play: a DROP ends the match at
+        // once (heads-up walkover), without needing stake bookkeeping (already
         // covered by StakeSettlementIntegrationTest).
         Map<String, Object> room = createRoom(hostToken, BigDecimal.ZERO, "POINTS");
         String roomCode = (String) room.get("roomCode");
@@ -95,11 +95,12 @@ class MatchLifecycleCleanupIntegrationTest extends AbstractGameIntegrationTest {
         String hostToken = (String) host.get("token");
         String guestToken = (String) guest.get("token");
 
-        // POINTS variant: a wrong DECLARE voids the round for everyone (no
-        // winner). dealsPerMatch=1 so the voided deal ends the match
-        // immediately with matchWinnerId == null — the exact case that used
-        // to be recorded as COMPLETED indistinguishably from a real win.
-        Map<String, Object> room = createRoom(hostToken, BigDecimal.ZERO, "POINTS", 1);
+        // POINTS is a single-deal match: a wrong DECLARE voids the round (no
+        // winner) and ends the match immediately with matchWinnerId == null —
+        // the exact case that used to be recorded as COMPLETED indistinguishably
+        // from a real win. dealsPerMatch on create is ignored for POINTS.
+        Map<String, Object> room = createRoom(hostToken, BigDecimal.ZERO, "POINTS");
+        assertThat(room.get("dealsPerMatch")).isNull();
         String roomCode = (String) room.get("roomCode");
         long hostUserId = firstPlayerUserId(room);
         Map<String, Object> joined = joinRoom(guestToken, roomCode);
