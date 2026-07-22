@@ -49,24 +49,25 @@ class WalletTransactionEntry {
   }
 }
 
-/// REST client for `/api/v1/wallet/*` — 401 auto-refresh via [ApiClient].
+/// REST client for `/api/v1/wallet/*`.
+///
+/// Auth is always [AuthSessionService] via [ApiClient] (refresh on expiry/401).
 class WalletApiService {
   WalletApiService({ApiClient? client}) : _client = client ?? ApiClient.instance;
 
   final ApiClient _client;
 
-  Future<WalletBalance> getBalance({String? jwt}) async {
-    final response = await _client.get(ApiConfig.walletBalanceUri, accessTokenOverride: jwt);
+  Future<WalletBalance> getBalance() async {
+    final response = await _client.get(ApiConfig.walletBalanceUri);
     if (response.statusCode != 200) {
       throw Exception('Fetch balance failed (${response.statusCode}): ${response.body}');
     }
     return WalletBalance.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
-  Future<WalletBalance> deposit({String? jwt, required double amount}) async {
+  Future<WalletBalance> deposit({required double amount}) async {
     final response = await _client.post(
       ApiConfig.walletDepositUri,
-      accessTokenOverride: jwt,
       body: {'amount': amount},
     );
     if (response.statusCode != 200) {
@@ -75,10 +76,9 @@ class WalletApiService {
     return WalletBalance.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
-  Future<WalletBalance> withdraw({String? jwt, required double amount}) async {
+  Future<WalletBalance> withdraw({required double amount}) async {
     final response = await _client.post(
       ApiConfig.walletWithdrawUri,
-      accessTokenOverride: jwt,
       body: {'amount': amount},
     );
     if (response.statusCode != 200) {
@@ -88,13 +88,11 @@ class WalletApiService {
   }
 
   Future<PageResponse<WalletTransactionEntry>> getTransactions({
-    String? jwt,
     int page = 0,
     int size = 20,
   }) async {
     final response = await _client.get(
       ApiConfig.walletTransactionsUri(page: page, size: size),
-      accessTokenOverride: jwt,
     );
     if (response.statusCode != 200) {
       throw Exception('Fetch transactions failed (${response.statusCode}): ${response.body}');

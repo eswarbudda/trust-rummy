@@ -255,20 +255,17 @@ class _GameTestScreenState extends State<GameTestScreen> {
       });
 
   Future<void> _createRoom() => _run(() async {
-        final jwt = _effectiveJwt;
-        if (jwt == null) {
-          throw Exception('Quick-register (or paste a JWT) first');
-        }
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
         // New room ⇒ must not keep sending actions on a previous room's socket.
         if (_connected) {
           _gameWs.disconnect();
         }
         final dealsPerMatch = _selectedVariant == 'DEALS' ? 2 : null;
         final room = await _roomApi.createRoom(
-          jwt: jwt,
           gameVariant: _selectedVariant,
           dealsPerMatch: dealsPerMatch,
         );
+        _syncTokenFieldFromSession();
         _roomCodeController.text = room.roomCode;
         setState(() {
           _seatedPlayers = room.players;
@@ -279,32 +276,31 @@ class _GameTestScreenState extends State<GameTestScreen> {
         });
       });
 
-  /// Prefer the live session access token (kept fresh by refresh).
-  /// Fall back to the JWT text field only when the session is empty.
-  String? get _effectiveJwt {
-    final fromSession = _session.accessToken?.trim();
-    if (fromSession != null && fromSession.isNotEmpty) return fromSession;
-    final fromField = _tokenController.text.trim();
-    return fromField.isEmpty ? null : fromField;
+  /// Keep the JWT text field in sync after ApiClient refresh.
+  void _syncTokenFieldFromSession() {
+    final token = _session.accessToken;
+    if (token != null && token.isNotEmpty) {
+      _tokenController.text = token;
+    }
   }
 
-  /// Actually seats the current JWT's user into an existing room — needed
+  /// Actually seats the current session user into an existing room — needed
   /// on every browser/tab *except* the one that created the room, since
   /// creating already auto-seats the creator. Connecting the WebSocket does
   /// NOT seat you; this REST call is the missing step for "need at least 2
   /// seated players to start".
   Future<void> _joinRoom() => _run(() async {
-        final jwt = _effectiveJwt;
-        if (jwt == null || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
         if (_connected) {
           _gameWs.disconnect();
         }
         final room = await _roomApi.joinRoom(
-          jwt: jwt,
           roomCode: _roomCodeController.text.trim(),
         );
+        _syncTokenFieldFromSession();
         setState(() {
           _seatedPlayers = room.players;
           _roomVariant = room.gameVariant ?? _roomVariant;
@@ -313,14 +309,14 @@ class _GameTestScreenState extends State<GameTestScreen> {
 
   /// Polls the current room's lobby state via REST (no WebSocket needed).
   Future<void> _getRoom() => _run(() async {
-        final jwt = _effectiveJwt;
-        if (jwt == null || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
         final room = await _roomApi.getRoom(
-          jwt: jwt,
           roomCode: _roomCodeController.text.trim(),
         );
+        _syncTokenFieldFromSession();
         setState(() {
           _seatedPlayers = room.players;
           _roomVariant = room.gameVariant ?? _roomVariant;
@@ -331,15 +327,15 @@ class _GameTestScreenState extends State<GameTestScreen> {
   /// After a completed match, REST leave fails (room not WAITING) — still unlock
   /// the lobby locally so a new game type can be chosen.
   Future<void> _leaveRoom() => _run(() async {
-        final jwt = _effectiveJwt;
-        if (jwt == null || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
         try {
           await _roomApi.leaveRoom(
-            jwt: jwt,
             roomCode: _roomCodeController.text.trim(),
           );
+          _syncTokenFieldFromSession();
         } catch (_) {
           // Completed / cancelled rooms reject leave — local reset is enough.
         }
@@ -348,15 +344,15 @@ class _GameTestScreenState extends State<GameTestScreen> {
 
   /// Host-only: closes a still-waiting room.
   Future<void> _cancelRoom() => _run(() async {
-        final jwt = _effectiveJwt;
-        if (jwt == null || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
         try {
           await _roomApi.cancelRoom(
-            jwt: jwt,
             roomCode: _roomCodeController.text.trim(),
           );
+          _syncTokenFieldFromSession();
         } catch (_) {
           // Same as leave: finished rooms cannot be cancelled via lobby REST.
         }
@@ -365,16 +361,16 @@ class _GameTestScreenState extends State<GameTestScreen> {
 
   /// Toggles the caller's ready flag. Purely informational — START_MATCH doesn't require it.
   Future<void> _toggleReady() => _run(() async {
-        final jwt = _effectiveJwt;
-        if (jwt == null || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
         final next = !_isReady;
         final room = await _roomApi.setReady(
-          jwt: jwt,
           roomCode: _roomCodeController.text.trim(),
           ready: next,
         );
+        _syncTokenFieldFromSession();
         setState(() {
           _isReady = next;
           _seatedPlayers = room.players;
@@ -383,30 +379,22 @@ class _GameTestScreenState extends State<GameTestScreen> {
 
   Future<void> _connect() => _run(() async {
         if (_roomCodeController.text.isEmpty) {
-          throw Exception('Need a JWT and a room code before connecting');
+          throw Exception('Need a room code before connecting');
         }
-        // Always mint a fresh access JWT before the WS handshake (15m TTL).
-        // Prefer session refresh; if that fails, do not reconnect with a stale
-        // text-field token — that is what caused "invalid or expired JWT".
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        // Always mint a fresh access JWT before the WS handshake when a
+        // refresh token exists (same session path as ApiClient REST).
         if (_session.refreshToken != null && _session.refreshToken!.isNotEmpty) {
           final refreshed = await _session.refreshAccessToken();
-          if (!refreshed) {
+          if (!refreshed && _session.isAccessExpired) {
             throw Exception(
               'Session expired — Quick Register or log in again, then Connect',
             );
           }
-        } else if (_session.accessToken == null || _session.accessToken!.isEmpty) {
-          // Manual paste into the JWT field: push it into the session so
-          // reconnect / REST callers use the same credential.
-          final pasted = _tokenController.text.trim();
-          if (pasted.isEmpty) {
-            throw Exception('Quick-register (or paste a JWT) first');
-          }
-          await _session.setAccessTokenForTesting(pasted);
         }
-        final jwt = _session.accessToken ?? _effectiveJwt;
+        final jwt = _session.accessToken;
         if (jwt == null || jwt.isEmpty) {
-          throw Exception('Need a JWT and a room code before connecting');
+          throw Exception('Need a signed-in session before connecting');
         }
         _tokenController.text = jwt;
         _decodeMyUsernameFrom(jwt);
@@ -414,7 +402,7 @@ class _GameTestScreenState extends State<GameTestScreen> {
         if (_gameWs.state != SocketConnectionState.connected) {
           throw Exception(
             'Game socket handshake rejected — JWT invalid/expired. '
-            'Quick Register again (access tokens last 15 minutes).',
+            'Quick Register again (access tokens may be short-lived in local config).',
           );
         }
       });

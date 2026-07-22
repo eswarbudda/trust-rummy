@@ -4,8 +4,15 @@ import 'package:http/http.dart' as http;
 
 import 'auth_session_service.dart';
 
-/// HTTP helper that attaches the session Bearer token and retries once on 401
-/// after a successful `/auth/refresh`.
+/// Single authenticated HTTP path for the Flutter client.
+///
+/// Always uses [AuthSessionService]'s access token. Before each call, refreshes
+/// when the access token is expired/expiring and a refresh token exists. On
+/// 401, refreshes once and retries. There is no per-call JWT override — that
+/// bypassed refresh and caused post-match Create Room failures.
+///
+/// Unauthenticated auth endpoints (`/api/v1/auth/*`) stay on [AuthApiService]
+/// with raw `http` — they mint or redeem tokens and must not send a Bearer.
 class ApiClient {
   ApiClient({AuthSessionService? session, http.Client? httpClient})
       : _session = session ?? AuthSessionService.instance,
@@ -16,47 +23,34 @@ class ApiClient {
   final AuthSessionService _session;
   final http.Client _http;
 
-  Future<http.Response> get(Uri uri, {String? accessTokenOverride}) =>
-      _send('GET', uri, accessTokenOverride: accessTokenOverride);
+  Future<http.Response> get(Uri uri) => _send('GET', uri);
 
-  Future<http.Response> post(
-    Uri uri, {
-    Object? body,
-    String? accessTokenOverride,
-  }) =>
-      _send('POST', uri, body: body, accessTokenOverride: accessTokenOverride);
+  Future<http.Response> post(Uri uri, {Object? body}) =>
+      _send('POST', uri, body: body);
 
-  Future<http.Response> put(
-    Uri uri, {
-    Object? body,
-    String? accessTokenOverride,
-  }) =>
-      _send('PUT', uri, body: body, accessTokenOverride: accessTokenOverride);
+  Future<http.Response> put(Uri uri, {Object? body}) =>
+      _send('PUT', uri, body: body);
 
-  Future<http.Response> delete(Uri uri, {String? accessTokenOverride}) =>
-      _send('DELETE', uri, accessTokenOverride: accessTokenOverride);
+  Future<http.Response> delete(Uri uri) => _send('DELETE', uri);
 
   Future<http.Response> _send(
     String method,
     Uri uri, {
     Object? body,
-    String? accessTokenOverride,
     bool isRetry = false,
   }) async {
-    // Proactive refresh when the access token is about to expire (avoids a
-    // wasted round-trip that would 401). Skip when an override token is forced.
     if (!isRetry &&
-        accessTokenOverride == null &&
         _session.refreshToken != null &&
-        _session.isAccessExpiringSoon) {
+        _session.refreshToken!.isNotEmpty &&
+        (_session.isAccessExpired || _session.isAccessExpiringSoon)) {
       await _session.refreshAccessToken();
     }
-    final effectiveToken = accessTokenOverride ?? _session.accessToken;
+
+    final token = _session.accessToken;
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (effectiveToken != null && effectiveToken.isNotEmpty)
-        'Authorization': 'Bearer $effectiveToken',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
 
     final encodedBody = body == null
@@ -83,12 +77,10 @@ class ApiClient {
         throw UnsupportedError('HTTP method $method');
     }
 
-    // Do not attempt refresh when the caller forced a specific token, or we
-    // already retried, or this is an unauthenticated call.
     if (response.statusCode == 401 &&
         !isRetry &&
-        accessTokenOverride == null &&
-        _session.refreshToken != null) {
+        _session.refreshToken != null &&
+        _session.refreshToken!.isNotEmpty) {
       final refreshed = await _session.refreshAccessToken();
       if (refreshed) {
         return _send(method, uri, body: body, isRetry: true);

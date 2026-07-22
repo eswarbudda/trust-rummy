@@ -167,20 +167,19 @@ class ScorecardSummary {
 
 /// REST client for `/api/v1/history/*` (see `MatchHistoryController`).
 /// Read-only, long-term records — active gameplay stays on the WebSocket.
-/// 401 auto-refresh via [ApiClient].
+///
+/// Auth is always [AuthSessionService] via [ApiClient] (refresh on expiry/401).
 class MatchHistoryApiService {
   MatchHistoryApiService({ApiClient? client}) : _client = client ?? ApiClient.instance;
 
   final ApiClient _client;
 
   Future<PageResponse<MatchHistoryItem>> listMyMatches({
-    String? jwt,
     int page = 0,
     int size = 20,
   }) async {
     final response = await _client.get(
       ApiConfig.matchHistoryUri(page: page, size: size),
-      accessTokenOverride: jwt,
     );
     if (response.statusCode != 200) {
       throw Exception('Fetch match history failed (${response.statusCode}): ${response.body}');
@@ -188,11 +187,8 @@ class MatchHistoryApiService {
     return PageResponse.fromJson(jsonDecode(response.body) as Map<String, dynamic>, MatchHistoryItem.fromJson);
   }
 
-  Future<MatchHistoryDetail> getMatchDetail({String? jwt, required int sessionId}) async {
-    final response = await _client.get(
-      ApiConfig.matchDetailUri(sessionId),
-      accessTokenOverride: jwt,
-    );
+  Future<MatchHistoryDetail> getMatchDetail({required int sessionId}) async {
+    final response = await _client.get(ApiConfig.matchDetailUri(sessionId));
     if (response.statusCode != 200) {
       throw Exception('Fetch match detail failed (${response.statusCode}): ${response.body}');
     }
@@ -200,14 +196,12 @@ class MatchHistoryApiService {
   }
 
   Future<PageResponse<MoveLogEntry>> getMatchMoves({
-    String? jwt,
     required int sessionId,
     int page = 0,
     int size = 50,
   }) async {
     final response = await _client.get(
       ApiConfig.matchMovesUri(sessionId, page: page, size: size),
-      accessTokenOverride: jwt,
     );
     if (response.statusCode != 200) {
       throw Exception('Fetch match moves failed (${response.statusCode}): ${response.body}');
@@ -215,11 +209,8 @@ class MatchHistoryApiService {
     return PageResponse.fromJson(jsonDecode(response.body) as Map<String, dynamic>, MoveLogEntry.fromJson);
   }
 
-  Future<ScorecardSummary> getScorecard({String? jwt}) async {
-    final response = await _client.get(
-      ApiConfig.scorecardUri,
-      accessTokenOverride: jwt,
-    );
+  Future<ScorecardSummary> getScorecard() async {
+    final response = await _client.get(ApiConfig.scorecardUri);
     if (response.statusCode != 200) {
       throw Exception('Fetch scorecard failed (${response.statusCode}): ${response.body}');
     }

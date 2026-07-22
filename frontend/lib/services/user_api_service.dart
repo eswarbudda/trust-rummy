@@ -37,18 +37,16 @@ class UserProfile {
   }
 }
 
-/// REST client for `/api/v1/users/*` (see `UserController`).
+/// REST client for `/api/v1/users/*`.
 ///
-/// Uses [ApiClient] so a 401 triggers one automatic refresh + retry when a
-/// refresh token is stored in [AuthSessionService]. Pass [jwt] only to force
-/// a specific access token (test screens).
+/// Auth is always [AuthSessionService] via [ApiClient] (refresh on expiry/401).
 class UserApiService {
   UserApiService({ApiClient? client}) : _client = client ?? ApiClient.instance;
 
   final ApiClient _client;
 
-  Future<UserProfile> getProfile({String? jwt}) async {
-    final response = await _client.get(ApiConfig.profileUri, accessTokenOverride: jwt);
+  Future<UserProfile> getProfile() async {
+    final response = await _client.get(ApiConfig.profileUri);
     if (response.statusCode != 200) {
       throw Exception('Fetch profile failed (${response.statusCode}): ${response.body}');
     }
@@ -56,13 +54,11 @@ class UserApiService {
   }
 
   Future<UserProfile> updateProfile({
-    String? jwt,
     String? displayName,
     String? email,
   }) async {
     final response = await _client.put(
       ApiConfig.profileUri,
-      accessTokenOverride: jwt,
       body: {'displayName': displayName, 'email': email},
     );
     if (response.statusCode != 200) {
@@ -72,13 +68,11 @@ class UserApiService {
   }
 
   Future<void> changePassword({
-    String? jwt,
     required String currentPassword,
     required String newPassword,
   }) async {
     final response = await _client.put(
       ApiConfig.changePasswordUri,
-      accessTokenOverride: jwt,
       body: {'currentPassword': currentPassword, 'newPassword': newPassword},
     );
     if (response.statusCode != 204 && response.statusCode != 200) {

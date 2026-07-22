@@ -33,6 +33,9 @@ class AuthResult {
 }
 
 /// REST client for `/api/v1/auth/*` (see `AuthController`).
+///
+/// Uses raw `http` (not [ApiClient]) on purpose: these endpoints mint or
+/// redeem tokens and must not attach a Bearer access token or trigger refresh.
 class AuthApiService {
   static final Random _random = Random();
 

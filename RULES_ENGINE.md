@@ -193,6 +193,8 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 
 Leaving the table / Play Again disconnects the game WebSocket so a later `START_MATCH` cannot target a completed room by mistake.
 
+Authenticated Flutter REST (rooms, profile, wallet, history) always goes through `ApiClient` + `AuthSessionService` — no per-call JWT override. Auth mint/refresh endpoints stay on raw HTTP via `AuthApiService`. `START_MATCH` is a WebSocket action (not REST); Connect refreshes the session access token before the handshake.
+
 ## 10. Persistence
 
 `GamePersistenceService` (all methods `@Async("gamePersistenceExecutor")`, called fire-and-forget from `RummyEngineService`) keeps the hot path off the database:

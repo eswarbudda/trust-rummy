@@ -133,6 +133,20 @@ class AuthSessionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ensures [ApiClient] has a session access token before authenticated REST.
+  ///
+  /// Prefer Quick Register / Login (access + refresh). If only a pasted access
+  /// JWT is available, loads it into the session (no refresh until full login).
+  Future<void> ensureSignedIn({String? pastedAccessToken}) async {
+    if (_accessToken != null && _accessToken!.isNotEmpty) return;
+    final pasted = pastedAccessToken?.trim();
+    if (pasted != null && pasted.isNotEmpty) {
+      await setAccessTokenForTesting(pasted);
+      return;
+    }
+    throw Exception('Sign in first (Quick Register / Login)');
+  }
+
   Future<void> logout() async {
     final refresh = _refreshToken;
     try {
