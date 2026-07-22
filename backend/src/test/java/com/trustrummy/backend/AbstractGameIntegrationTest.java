@@ -40,7 +40,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * configured, so these tests use the same database the app normally runs
  * against.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        // Shared Spring context runs many register() calls; production default (20/5m)
+        // would trip AuthRateLimiter mid-suite and surface as register failures.
+        properties = "auth.rate-limit.max-attempts=1000"
+)
 abstract class AbstractGameIntegrationTest {
 
     @Value("${local.server.port}")

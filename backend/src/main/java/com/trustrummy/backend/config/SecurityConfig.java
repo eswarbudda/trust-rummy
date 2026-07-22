@@ -53,6 +53,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        // Boot forwards ResponseStatusException (e.g. auth 429) to /error;
+                        // without this, anonymous error dispatch becomes 403 FORBIDDEN.
+                        .requestMatchers("/error").permitAll()
                         // Rule 2: the raw HTTP entry point of the WS upgrade is allowed through
                         // Spring Security; JwtHandshakeInterceptor performs the real check.
                         .requestMatchers("/ws/**").permitAll()
