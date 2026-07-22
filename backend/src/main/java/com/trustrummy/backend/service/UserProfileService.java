@@ -4,6 +4,7 @@ import com.trustrummy.backend.dto.ChangePasswordRequest;
 import com.trustrummy.backend.dto.UpdateProfileRequest;
 import com.trustrummy.backend.dto.UserProfileResponse;
 import com.trustrummy.backend.entity.User;
+import com.trustrummy.backend.repository.RefreshTokenRepository;
 import com.trustrummy.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,6 +17,7 @@ public class UserProfileService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     public UserProfileResponse getProfile(String username) {
         return UserProfileResponse.from(getUser(username));
@@ -49,6 +51,8 @@ public class UserProfileService {
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        // Force re-login everywhere: any stolen/shared refresh tokens die with the password.
+        refreshTokenRepository.revokeAllActiveForUser(user.getId());
     }
 
     private User getUser(String username) {

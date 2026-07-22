@@ -4,6 +4,7 @@ import com.trustrummy.backend.entity.GameRoom;
 import com.trustrummy.backend.entity.MoveType;
 import com.trustrummy.backend.entity.PlayerStatus;
 import com.trustrummy.backend.entity.RoomPlayer;
+import com.trustrummy.backend.entity.RoomStatus;
 import com.trustrummy.backend.game.config.GameConfig;
 import com.trustrummy.backend.game.engine.DeckFactory;
 import com.trustrummy.backend.game.engine.GameEngine;
@@ -180,6 +181,11 @@ public class RummyEngineService implements GameEngine {
             sendError(match.getRoomCode(), requesterUserId, "Only the host can start the match");
             return;
         }
+        if (room.getStatus() != RoomStatus.WAITING) {
+            sendError(match.getRoomCode(), requesterUserId,
+                    "Room is not waiting for a match start (status=" + room.getStatus() + ")");
+            return;
+        }
 
         List<RoomPlayer> seated = new ArrayList<>(roomPlayerRepository.findByGameRoomIdAndStatusNot(room.getId(), PlayerStatus.LEFT));
         seated.sort(Comparator.comparing(rp -> rp.getSeatNumber() == null ? Integer.MAX_VALUE : rp.getSeatNumber()));
@@ -321,22 +327,22 @@ public class RummyEngineService implements GameEngine {
 
         List<Long> stillActive = match.activeMatchPlayerIds();
 
-        // Heads-up walkover: when exactly two seats started and this deal
-        // ended because someone DROPped/forfeited (leaving one PLAYING),
-        // the remaining player wins the match — stakes settle via finishMatch.
+        // DROP left ≤1 PLAYING seat this deal. For pool (and the final deal of a
+        // fixed-length match) that is a match walkover → MATCH_ENDED.
+        // For DEALS/POINTS with deals still remaining, only the *deal* ends —
+        // both seats stay match-ACTIVE and we pause in BETWEEN_DEALS.
         long droppedThisDeal = deal.getTurnOrder().stream()
                 .filter(id -> deal.getRoundStatus().get(id) == RoundStatus.DROPPED)
                 .count();
-        boolean headsUpDropWalkover = match.getSeatOrder().size() == 2
-                && !wrongDeclareVoid
-                && winnerUserId != null
+        boolean lastStandingThisDeal = !wrongDeclareVoid
                 && droppedThisDeal >= 1
                 && deal.activePlayerIds().size() <= 1;
+        boolean dropWalkover = lastStandingThisDeal && !hasRemainingFixedDeals(match);
 
-        boolean matchComplete = isMatchComplete(match, stillActive, headsUpDropWalkover);
+        boolean matchComplete = isMatchComplete(match, stillActive, dropWalkover);
 
         if (matchComplete) {
-            Long matchWinner = resolveMatchWinner(match, winnerUserId, wrongDeclareVoid, headsUpDropWalkover, stillActive);
+            Long matchWinner = resolveMatchWinner(match, winnerUserId, wrongDeclareVoid, dropWalkover, stillActive);
             finishMatch(match, matchWinner);
             return;
         }
@@ -344,8 +350,17 @@ public class RummyEngineService implements GameEngine {
         enterBetweenDeals(match, deal, winnerUserId, roundPoints, newlyEliminated);
     }
 
-    private boolean isMatchComplete(MatchState match, List<Long> stillActive, boolean headsUpDropWalkover) {
-        if (headsUpDropWalkover || stillActive.size() <= 1) {
+    /** True when this is a fixed-deal variant and more deals are scheduled after the current one. */
+    private static boolean hasRemainingFixedDeals(MatchState match) {
+        GameVariant variant = match.getConfig().getGameVariant();
+        Integer dealsPerMatch = match.getConfig().getDealsPerMatch();
+        return variant.isFixedDealMatch()
+                && dealsPerMatch != null
+                && match.getDealNumber() < dealsPerMatch;
+    }
+
+    private boolean isMatchComplete(MatchState match, List<Long> stillActive, boolean dropWalkover) {
+        if (dropWalkover || stillActive.size() <= 1) {
             return true;
         }
         GameVariant variant = match.getConfig().getGameVariant();
@@ -356,9 +371,13 @@ public class RummyEngineService implements GameEngine {
     }
 
     private Long resolveMatchWinner(MatchState match, Long dealWinnerUserId, boolean wrongDeclareVoid,
-                                    boolean headsUpDropWalkover, List<Long> stillActive) {
-        if (headsUpDropWalkover) {
-            return dealWinnerUserId;
+                                    boolean dropWalkover, List<Long> stillActive) {
+        if (dropWalkover) {
+            if (dealWinnerUserId != null) {
+                return dealWinnerUserId;
+            }
+            // Every seat dropped/forfeited in the same deal — no stake winner.
+            return stillActive.size() == 1 ? stillActive.get(0) : null;
         }
         if (stillActive.size() == 1) {
             return stillActive.get(0);
@@ -425,8 +444,8 @@ public class RummyEngineService implements GameEngine {
     }
 
     private void handleLeaveTable(MatchState match, Long userId) {
-        if (match.getStatus() != MatchStatus.BETWEEN_DEALS) {
-            sendError(match.getRoomCode(), userId, "Leave table from result is only available between deals");
+        if (match.getStatus() == MatchStatus.COMPLETED || match.getStatus() == MatchStatus.WAITING) {
+            sendError(match.getRoomCode(), userId, "Leave table is only available during a live match");
             return;
         }
         PlayerScorecard scorecard = match.getScorecards().get(userId);
@@ -435,10 +454,60 @@ public class RummyEngineService implements GameEngine {
             return;
         }
 
-        // Any leave from the deal-result screen ends the whole match so every
-        // remaining client can show Match Summary (no silent continue).
+        if (match.getStatus() == MatchStatus.IN_PROGRESS) {
+            leaveDuringActiveDeal(match, userId);
+            return;
+        }
+
+        // BETWEEN_DEALS: any leave ends the whole match so every remaining
+        // client can show Match Summary (no silent continue / auto next deal).
+        endMatchAfterVoluntaryLeave(match, userId);
+    }
+
+    /**
+     * EXIT / Leave during an active deal: forfeit the seat like a disconnect
+     * DROP, remove the player from the match, and finish the match when only
+     * one (or zero) active seats remain — so heads-up leave ends the game for
+     * everyone immediately.
+     */
+    private void leaveDuringActiveDeal(MatchState match, Long userId) {
+        Deal deal = match.getCurrentDeal();
+        if (deal != null && deal.getStatus() == DealStatus.IN_PROGRESS
+                && deal.getRoundStatus().get(userId) == RoundStatus.PLAYING) {
+            forfeitPlayerFromCurrentDeal(match, userId, "left_table");
+        }
+
+        if (match.getStatus() == MatchStatus.COMPLETED) {
+            return;
+        }
+
+        PlayerScorecard scorecard = match.getScorecards().get(userId);
+        if (scorecard != null && scorecard.getMatchStatus() == MatchPlayerStatus.ACTIVE) {
+            scorecard.setMatchStatus(MatchPlayerStatus.ELIMINATED);
+            match.touch();
+            broadcastService.broadcast(match.getRoomCode(),
+                    GameEvent.of(EventType.PLAYER_ELIMINATED).with("userId", userId).with("reason", "LEFT_TABLE"));
+        }
+
+        List<Long> stillActive = match.activeMatchPlayerIds();
+        if (stillActive.size() <= 1) {
+            turnManager.cancel(match.getRoomCode());
+            Deal current = match.getCurrentDeal();
+            if (current != null && current.getStatus() == DealStatus.IN_PROGRESS) {
+                List<Long> remaining = current.activePlayerIds();
+                endDeal(match, current, remaining.isEmpty() ? null : remaining.get(0), false);
+            } else if (match.getStatus() != MatchStatus.COMPLETED) {
+                finishMatch(match, stillActive.isEmpty() ? null : stillActive.get(0));
+            }
+        }
+    }
+
+    private void endMatchAfterVoluntaryLeave(MatchState match, Long userId) {
         turnManager.cancel(match.getRoomCode());
-        scorecard.setMatchStatus(MatchPlayerStatus.ELIMINATED);
+        PlayerScorecard scorecard = match.getScorecards().get(userId);
+        if (scorecard != null) {
+            scorecard.setMatchStatus(MatchPlayerStatus.ELIMINATED);
+        }
         match.touch();
         broadcastService.broadcast(match.getRoomCode(),
                 GameEvent.of(EventType.PLAYER_ELIMINATED).with("userId", userId).with("reason", "LEFT_TABLE"));
@@ -639,6 +708,9 @@ public class RummyEngineService implements GameEngine {
      * hand-return/turn-advance mechanics as {@link #handleDrop} so a
      * forfeited seat behaves identically to a voluntary drop for scoring
      * and match-progression purposes.
+     * <p>
+     * Also covers {@link MatchStatus#BETWEEN_DEALS}: a disconnect on the
+     * result screen ends the match for everyone (same as {@code LEAVE_TABLE}).
      */
     @Override
     public void forfeitDisconnectedPlayer(String roomCode, Long userId) {
@@ -648,6 +720,13 @@ public class RummyEngineService implements GameEngine {
         }
         match.getLock().lock();
         try {
+            if (match.getStatus() == MatchStatus.BETWEEN_DEALS) {
+                PlayerScorecard scorecard = match.getScorecards().get(userId);
+                if (scorecard != null && scorecard.getMatchStatus() == MatchPlayerStatus.ACTIVE) {
+                    endMatchAfterVoluntaryLeave(match, userId);
+                }
+                return;
+            }
             if (match.getStatus() != MatchStatus.IN_PROGRESS) {
                 return;
             }
@@ -658,45 +737,60 @@ public class RummyEngineService implements GameEngine {
             if (deal.getRoundStatus().get(userId) != RoundStatus.PLAYING) {
                 return; // already dropped/declared/not part of this deal — nothing to forfeit
             }
-
-            boolean wasCurrentTurn = userId.equals(deal.currentTurnUserId());
-            boolean isFirstTurn = !deal.getHasCompletedFirstTurn().getOrDefault(userId, false);
-            int penalty = isFirstTurn
-                    ? scoreCalculator.firstDropPoints(match.getConfig())
-                    : scoreCalculator.middleDropPoints(match.getConfig());
-
-            deal.getRoundStatus().put(userId, RoundStatus.DROPPED);
-            PlayerScorecard scorecard = match.getScorecards().get(userId);
-            if (scorecard != null) {
-                scorecard.addPoints(penalty);
-            }
-
-            List<Card> hand = deal.getHands().remove(userId);
-            if (hand != null && !hand.isEmpty()) {
-                deal.returnCardsToClosedDeckShuffled(hand);
-            }
-
-            persistenceService.recordMove(roomCode, userId, MoveType.DROP,
-                    "{\"penalty\":" + penalty + ",\"reason\":\"disconnect_timeout\"}", nextSequence(roomCode));
-
-            log.info("Forfeiting disconnected player {} in room {} (penalty={}, wasCurrentTurn={})",
-                    userId, roomCode, penalty, wasCurrentTurn);
-
-            broadcastDealState(match, deal, EventType.PLAYER_DROPPED);
-
-            if (deal.activePlayerCount() <= 1) {
-                List<Long> remaining = deal.activePlayerIds();
-                endDeal(match, deal, remaining.isEmpty() ? null : remaining.get(0), false);
-                return;
-            }
-
-            if (wasCurrentTurn) {
-                deal.advanceTurn();
-                broadcastDealState(match, deal, EventType.TURN_STATE);
-                scheduleTimeoutFor(match);
-            }
+            forfeitPlayerFromCurrentDeal(match, userId, "disconnect_timeout");
         } finally {
             match.getLock().unlock();
+        }
+    }
+
+    /**
+     * Assumes the caller already holds {@code match.getLock()}. Applies a
+     * DROP-equivalent forfeit (penalty + hand return + end-deal / advance).
+     */
+    private void forfeitPlayerFromCurrentDeal(MatchState match, Long userId, String reason) {
+        Deal deal = match.getCurrentDeal();
+        if (deal == null || deal.getStatus() != DealStatus.IN_PROGRESS) {
+            return;
+        }
+        if (deal.getRoundStatus().get(userId) != RoundStatus.PLAYING) {
+            return;
+        }
+
+        boolean wasCurrentTurn = userId.equals(deal.currentTurnUserId());
+        boolean isFirstTurn = !deal.getHasCompletedFirstTurn().getOrDefault(userId, false);
+        int penalty = isFirstTurn
+                ? scoreCalculator.firstDropPoints(match.getConfig())
+                : scoreCalculator.middleDropPoints(match.getConfig());
+
+        deal.getRoundStatus().put(userId, RoundStatus.DROPPED);
+        PlayerScorecard scorecard = match.getScorecards().get(userId);
+        if (scorecard != null) {
+            scorecard.addPoints(penalty);
+        }
+
+        List<Card> hand = deal.getHands().remove(userId);
+        if (hand != null && !hand.isEmpty()) {
+            deal.returnCardsToClosedDeckShuffled(hand);
+        }
+
+        persistenceService.recordMove(match.getRoomCode(), userId, MoveType.DROP,
+                "{\"penalty\":" + penalty + ",\"reason\":\"" + reason + "\"}", nextSequence(match.getRoomCode()));
+
+        log.info("Forfeiting player {} in room {} (penalty={}, reason={}, wasCurrentTurn={})",
+                userId, match.getRoomCode(), penalty, reason, wasCurrentTurn);
+
+        broadcastDealState(match, deal, EventType.PLAYER_DROPPED);
+
+        if (deal.activePlayerCount() <= 1) {
+            List<Long> remaining = deal.activePlayerIds();
+            endDeal(match, deal, remaining.isEmpty() ? null : remaining.get(0), false);
+            return;
+        }
+
+        if (wasCurrentTurn) {
+            deal.advanceTurn();
+            broadcastDealState(match, deal, EventType.TURN_STATE);
+            scheduleTimeoutFor(match);
         }
     }
 

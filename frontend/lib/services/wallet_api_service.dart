@@ -1,9 +1,8 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../config/api_config.dart';
 import '../models/page_response.dart';
+import 'api_client.dart';
 
 /// Mirrors the backend's `WalletBalanceResponse` DTO.
 class WalletBalance {
@@ -50,21 +49,25 @@ class WalletTransactionEntry {
   }
 }
 
-/// REST client for `/api/v1/wallet/*` (see `WalletController`).
+/// REST client for `/api/v1/wallet/*` — 401 auto-refresh via [ApiClient].
 class WalletApiService {
-  Future<WalletBalance> getBalance(String jwt) async {
-    final response = await http.get(ApiConfig.walletBalanceUri, headers: _authHeaders(jwt));
+  WalletApiService({ApiClient? client}) : _client = client ?? ApiClient.instance;
+
+  final ApiClient _client;
+
+  Future<WalletBalance> getBalance({String? jwt}) async {
+    final response = await _client.get(ApiConfig.walletBalanceUri, accessTokenOverride: jwt);
     if (response.statusCode != 200) {
       throw Exception('Fetch balance failed (${response.statusCode}): ${response.body}');
     }
     return WalletBalance.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
-  Future<WalletBalance> deposit({required String jwt, required double amount}) async {
-    final response = await http.post(
+  Future<WalletBalance> deposit({String? jwt, required double amount}) async {
+    final response = await _client.post(
       ApiConfig.walletDepositUri,
-      headers: _authHeaders(jwt),
-      body: jsonEncode({'amount': amount}),
+      accessTokenOverride: jwt,
+      body: {'amount': amount},
     );
     if (response.statusCode != 200) {
       throw Exception('Deposit failed (${response.statusCode}): ${response.body}');
@@ -72,11 +75,11 @@ class WalletApiService {
     return WalletBalance.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
-  Future<WalletBalance> withdraw({required String jwt, required double amount}) async {
-    final response = await http.post(
+  Future<WalletBalance> withdraw({String? jwt, required double amount}) async {
+    final response = await _client.post(
       ApiConfig.walletWithdrawUri,
-      headers: _authHeaders(jwt),
-      body: jsonEncode({'amount': amount}),
+      accessTokenOverride: jwt,
+      body: {'amount': amount},
     );
     if (response.statusCode != 200) {
       throw Exception('Withdraw failed (${response.statusCode}): ${response.body}');
@@ -85,13 +88,13 @@ class WalletApiService {
   }
 
   Future<PageResponse<WalletTransactionEntry>> getTransactions({
-    required String jwt,
+    String? jwt,
     int page = 0,
     int size = 20,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       ApiConfig.walletTransactionsUri(page: page, size: size),
-      headers: _authHeaders(jwt),
+      accessTokenOverride: jwt,
     );
     if (response.statusCode != 200) {
       throw Exception('Fetch transactions failed (${response.statusCode}): ${response.body}');
@@ -101,9 +104,4 @@ class WalletApiService {
       WalletTransactionEntry.fromJson,
     );
   }
-
-  Map<String, String> _authHeaders(String jwt) => {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $jwt',
-      };
 }

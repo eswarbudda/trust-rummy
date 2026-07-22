@@ -10,10 +10,10 @@ import lombok.Setter;
 import java.time.Instant;
 
 /**
- * A long-lived, opaque, server-tracked token used only to mint new short-lived
- * access JWTs via {@code POST /api/v1/auth/refresh}. Rotated on every use
- * (the old row is marked {@code revoked} and a new row/token issued) so a
- * leaked, already-used refresh token cannot be replayed.
+ * Server-side row for a refresh credential used by {@code POST /api/v1/auth/refresh}.
+ * The {@code token} column stores the SHA-256 hex of the opaque secret given to
+ * the client (never the secret itself). Rotated on every successful use; reuse
+ * of a revoked row triggers revoke-all for that user.
  */
 @Entity
 @Table(name = "refresh_tokens")

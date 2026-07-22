@@ -1,6 +1,7 @@
 package com.trustrummy.backend.controller;
 
 import com.trustrummy.backend.exception.ForbiddenOperationException;
+import com.trustrummy.backend.exception.RefreshTokenCompromisedException;
 import com.trustrummy.backend.exception.ResourceNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, Object>> handleConflict(IllegalStateException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(RefreshTokenCompromisedException.class)
+    public ResponseEntity<Map<String, Object>> handleRefreshCompromised(RefreshTokenCompromisedException ex) {
         return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 

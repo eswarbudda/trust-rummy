@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../config/api_config.dart';
+import 'api_client.dart';
+import 'auth_session_service.dart';
 
 /// Mirrors the backend's `UserProfileResponse` DTO.
 class UserProfile {
@@ -38,9 +38,17 @@ class UserProfile {
 }
 
 /// REST client for `/api/v1/users/*` (see `UserController`).
+///
+/// Uses [ApiClient] so a 401 triggers one automatic refresh + retry when a
+/// refresh token is stored in [AuthSessionService]. Pass [jwt] only to force
+/// a specific access token (test screens).
 class UserApiService {
-  Future<UserProfile> getProfile(String jwt) async {
-    final response = await http.get(ApiConfig.profileUri, headers: _authHeaders(jwt));
+  UserApiService({ApiClient? client}) : _client = client ?? ApiClient.instance;
+
+  final ApiClient _client;
+
+  Future<UserProfile> getProfile({String? jwt}) async {
+    final response = await _client.get(ApiConfig.profileUri, accessTokenOverride: jwt);
     if (response.statusCode != 200) {
       throw Exception('Fetch profile failed (${response.statusCode}): ${response.body}');
     }
@@ -48,14 +56,14 @@ class UserApiService {
   }
 
   Future<UserProfile> updateProfile({
-    required String jwt,
+    String? jwt,
     String? displayName,
     String? email,
   }) async {
-    final response = await http.put(
+    final response = await _client.put(
       ApiConfig.profileUri,
-      headers: _authHeaders(jwt),
-      body: jsonEncode({'displayName': displayName, 'email': email}),
+      accessTokenOverride: jwt,
+      body: {'displayName': displayName, 'email': email},
     );
     if (response.statusCode != 200) {
       throw Exception('Update profile failed (${response.statusCode}): ${response.body}');
@@ -64,22 +72,19 @@ class UserApiService {
   }
 
   Future<void> changePassword({
-    required String jwt,
+    String? jwt,
     required String currentPassword,
     required String newPassword,
   }) async {
-    final response = await http.put(
+    final response = await _client.put(
       ApiConfig.changePasswordUri,
-      headers: _authHeaders(jwt),
-      body: jsonEncode({'currentPassword': currentPassword, 'newPassword': newPassword}),
+      accessTokenOverride: jwt,
+      body: {'currentPassword': currentPassword, 'newPassword': newPassword},
     );
     if (response.statusCode != 204 && response.statusCode != 200) {
       throw Exception('Change password failed (${response.statusCode}): ${response.body}');
     }
+    // Server revoked all refresh tokens — drop local credentials (no logout call needed).
+    await AuthSessionService.instance.clearLocalSession();
   }
-
-  Map<String, String> _authHeaders(String jwt) => {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $jwt',
-      };
 }

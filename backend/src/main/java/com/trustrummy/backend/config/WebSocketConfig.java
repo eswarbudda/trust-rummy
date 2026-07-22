@@ -1,5 +1,6 @@
 package com.trustrummy.backend.config;
 
+import com.trustrummy.backend.repository.UserRepository;
 import com.trustrummy.backend.security.JwtHandshakeInterceptor;
 import com.trustrummy.backend.security.JwtTokenUtil;
 import com.trustrummy.backend.websocket.GameWebSocketHandler;
@@ -32,6 +33,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private static final int MAX_SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
     private final JwtTokenUtil jwtTokenUtil;
+    private final UserRepository userRepository;
     private final GameWebSocketHandler gameWebSocketHandler;
 
     @Override
@@ -62,7 +64,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Bean
     public JwtHandshakeInterceptor jwtHandshakeInterceptor() {
-        return new JwtHandshakeInterceptor(jwtTokenUtil);
+        return new JwtHandshakeInterceptor(jwtTokenUtil, userRepository);
     }
 
     /**

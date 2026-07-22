@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/page_response.dart';
 import '../services/auth_api_service.dart';
+import '../services/auth_session_service.dart';
 import '../services/match_history_api_service.dart';
 import '../services/user_api_service.dart';
 import '../services/wallet_api_service.dart';
@@ -23,7 +24,7 @@ class AccountTestScreen extends StatefulWidget {
 }
 
 class _AccountTestScreenState extends State<AccountTestScreen> {
-  final _authApi = AuthApiService();
+  final _session = AuthSessionService.instance;
   final _userApi = UserApiService();
   final _walletApi = WalletApiService();
   final _historyApi = MatchHistoryApiService();
@@ -98,6 +99,33 @@ class _AccountTestScreenState extends State<AccountTestScreen> {
 
   String get _jwt => _tokenController.text.trim();
 
+  @override
+  void initState() {
+    super.initState();
+    _hydrateFromSession();
+  }
+
+  Future<void> _hydrateFromSession() async {
+    await _session.restore();
+    if (!mounted) return;
+    if (_session.accessToken != null) {
+      _tokenController.text = _session.accessToken!;
+    }
+    if (_session.refreshToken != null) {
+      _refreshTokenController.text = _session.refreshToken!;
+    }
+    if (_session.username != null) {
+      _usernameController.text = _session.username!;
+    }
+    setState(() {});
+  }
+
+  void _syncControllersFrom(AuthResult result) {
+    _tokenController.text = result.token;
+    _refreshTokenController.text = result.refreshToken ?? '';
+    _usernameController.text = result.username;
+  }
+
   // ---- Auth ----
 
   Future<void> _fillRandomAccount() async {
@@ -111,53 +139,68 @@ class _AccountTestScreenState extends State<AccountTestScreen> {
   }
 
   Future<void> _register() => _run('REGISTER', () async {
-        final result = await _authApi.register(
+        final result = await _session.register(
           username: _usernameController.text.trim(),
           email: _emailController.text.trim(),
           password: _passwordController.text,
           displayName: _displayNameController.text.trim(),
         );
-        _tokenController.text = result.token;
-        _refreshTokenController.text = result.refreshToken ?? '';
-        return {'username': result.username, 'token': result.token, 'refreshToken': result.refreshToken};
+        _syncControllersFrom(result);
+        return {
+          'username': result.username,
+          'token': result.token,
+          'refreshToken': result.refreshToken,
+          'expiresInMs': result.expiresInMs,
+          'storedInSecureStorage': true,
+        };
       });
 
   Future<void> _login() => _run('LOGIN', () async {
-        final result = await _authApi.login(
+        final result = await _session.login(
           username: _usernameController.text.trim(),
           password: _passwordController.text,
         );
-        _tokenController.text = result.token;
-        _refreshTokenController.text = result.refreshToken ?? '';
-        return {'username': result.username, 'token': result.token, 'refreshToken': result.refreshToken};
+        _syncControllersFrom(result);
+        return {
+          'username': result.username,
+          'token': result.token,
+          'refreshToken': result.refreshToken,
+          'expiresInMs': result.expiresInMs,
+          'storedInSecureStorage': true,
+        };
       });
 
   Future<void> _refreshToken() => _run('REFRESH TOKEN', () async {
-        if (_refreshTokenController.text.trim().isEmpty) {
-          throw Exception('No refresh token yet — register or login first');
+        final ok = await _session.refreshAccessToken();
+        if (!ok) {
+          throw Exception('Refresh failed — register/login first or refresh token revoked');
         }
-        final result = await _authApi.refresh(refreshToken: _refreshTokenController.text.trim());
-        _tokenController.text = result.token;
-        _refreshTokenController.text = result.refreshToken ?? '';
-        return {'username': result.username, 'token': result.token, 'refreshToken': result.refreshToken};
+        _tokenController.text = _session.accessToken ?? '';
+        _refreshTokenController.text = _session.refreshToken ?? '';
+        return {
+          'username': _session.username,
+          'token': _session.accessToken,
+          'refreshToken': _session.refreshToken,
+        };
       });
 
   Future<void> _logout() => _run('LOGOUT', () async {
-        await _authApi.logout(refreshToken: _refreshTokenController.text.trim());
+        await _session.logout();
+        _tokenController.clear();
         _refreshTokenController.clear();
-        return {'status': 'refresh token revoked (access JWT remains valid until it expires)'};
+        return {'status': 'refresh revoked + secure storage cleared'};
       });
 
   // ---- Profile ----
 
   Future<void> _fetchProfile() => _run('FETCH MY PROFILE', () async {
-        final profile = await _userApi.getProfile(_jwt);
+        final profile = await _userApi.getProfile(jwt: _jwt.isEmpty ? null : _jwt);
         return _profileToMap(profile);
       });
 
   Future<void> _updateProfile() => _run('UPDATE PROFILE', () async {
         final profile = await _userApi.updateProfile(
-          jwt: _jwt,
+          jwt: _jwt.isEmpty ? null : _jwt,
           displayName: _displayNameController.text.trim().isEmpty ? null : _displayNameController.text.trim(),
           email: _emailController.text.trim().isEmpty ? null : _emailController.text.trim(),
         );
@@ -166,11 +209,15 @@ class _AccountTestScreenState extends State<AccountTestScreen> {
 
   Future<void> _changePassword() => _run('CHANGE PASSWORD', () async {
         await _userApi.changePassword(
-          jwt: _jwt,
+          jwt: _jwt.isEmpty ? null : _jwt,
           currentPassword: _currentPasswordController.text,
           newPassword: _newPasswordController.text,
         );
-        return {'status': 'password changed'};
+        _tokenController.clear();
+        _refreshTokenController.clear();
+        return {
+          'status': 'password changed; all refresh tokens revoked; local session cleared',
+        };
       });
 
   Map<String, dynamic> _profileToMap(UserProfile p) => {
@@ -188,17 +235,17 @@ class _AccountTestScreenState extends State<AccountTestScreen> {
   double get _amount => double.tryParse(_amountController.text.trim()) ?? 0;
 
   Future<void> _fetchBalance() => _run('WALLET BALANCE', () async {
-        final balance = await _walletApi.getBalance(_jwt);
+        final balance = await _walletApi.getBalance(jwt: _jwt.isEmpty ? null : _jwt);
         return {'username': balance.username, 'balance': balance.balance};
       });
 
   Future<void> _deposit() => _run('WALLET DEPOSIT', () async {
-        final balance = await _walletApi.deposit(jwt: _jwt, amount: _amount);
+        final balance = await _walletApi.deposit(jwt: _jwt.isEmpty ? null : _jwt, amount: _amount);
         return {'username': balance.username, 'balance': balance.balance};
       });
 
   Future<void> _withdraw() => _run('WALLET WITHDRAW', () async {
-        final balance = await _walletApi.withdraw(jwt: _jwt, amount: _amount);
+        final balance = await _walletApi.withdraw(jwt: _jwt.isEmpty ? null : _jwt, amount: _amount);
         return {'username': balance.username, 'balance': balance.balance};
       });
 
@@ -231,7 +278,7 @@ class _AccountTestScreenState extends State<AccountTestScreen> {
 
   Future<void> _fetchMatchDetail() => _run('MATCH DETAIL', () async {
         if (_sessionId == null) throw Exception('Enter a numeric session id first');
-        final detail = await _historyApi.getMatchDetail(jwt: _jwt, sessionId: _sessionId!);
+        final detail = await _historyApi.getMatchDetail(jwt: _jwt.isEmpty ? null : _jwt, sessionId: _sessionId!);
         return {
           'sessionId': detail.sessionId,
           'roomCode': detail.roomCode,
@@ -245,12 +292,12 @@ class _AccountTestScreenState extends State<AccountTestScreen> {
 
   Future<void> _fetchMatchMoves() => _run('MATCH MOVES', () async {
         if (_sessionId == null) throw Exception('Enter a numeric session id first');
-        final page = await _historyApi.getMatchMoves(jwt: _jwt, sessionId: _sessionId!);
+        final page = await _historyApi.getMatchMoves(jwt: _jwt.isEmpty ? null : _jwt, sessionId: _sessionId!);
         return _pageToMap(page, (m) => {'username': m.username, 'moveType': m.moveType, 'sequenceNo': m.sequenceNo});
       });
 
   Future<void> _fetchScorecard() => _run('SCORECARD', () async {
-        final s = await _historyApi.getScorecard(_jwt);
+        final s = await _historyApi.getScorecard(jwt: _jwt.isEmpty ? null : _jwt);
         return {'totalMatches': s.totalMatches, 'wins': s.wins, 'losses': s.losses, 'netChips': s.netChips, 'bestDealScore': s.bestDealScore};
       });
 
