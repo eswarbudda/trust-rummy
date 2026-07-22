@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/auth_api_service.dart';
+import '../services/auth_session_service.dart';
 import '../services/websocket_service.dart';
 
 /// Phase 1 deliverable: a clean, visual "hit run and it just works" screen
@@ -16,7 +16,7 @@ class TelemetryScreen extends StatefulWidget {
 }
 
 class _TelemetryScreenState extends State<TelemetryScreen> {
-  final _authApi = AuthApiService();
+  final _session = AuthSessionService.instance;
   final _ws = WebSocketService();
 
   final List<String> _log = [];
@@ -61,8 +61,8 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     });
 
     try {
-      final token = await _authApi.quickRegisterTestUser();
-      await _ws.connect(token);
+      final result = await _session.quickRegisterTestUser();
+      await _ws.connect(result.token);
     } catch (e) {
       setState(() => _errorMessage = e.toString());
     } finally {

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../models/game_state.dart';
-import '../services/auth_api_service.dart';
+import '../services/auth_session_service.dart';
 import '../services/game_websocket_service.dart';
 import '../services/room_api_service.dart';
 import 'rummy_game_screen.dart';
@@ -28,7 +28,7 @@ class GameTestScreen extends StatefulWidget {
 }
 
 class _GameTestScreenState extends State<GameTestScreen> {
-  final _authApi = AuthApiService();
+  final _session = AuthSessionService.instance;
   final _roomApi = RoomApiService();
   final _gameWs = GameWebSocketService();
 
@@ -91,6 +91,7 @@ class _GameTestScreenState extends State<GameTestScreen> {
   @override
   void initState() {
     super.initState();
+    _hydrateSession();
     _gameWs.stateStream.listen((state) {
       setState(() => _connectionState = state);
     });
@@ -143,6 +144,18 @@ class _GameTestScreenState extends State<GameTestScreen> {
     });
   }
 
+  Future<void> _hydrateSession() async {
+    await _session.restore();
+    if (!mounted) return;
+    if (_session.accessToken != null) {
+      _tokenController.text = _session.accessToken!;
+    }
+    if (_session.username != null) {
+      _myUsername = _session.username;
+    }
+    setState(() {});
+  }
+
   Future<void> _openLiveTable() async {
     if (!_connected || _tableOpen) return;
     final roomCode = _roomCodeController.text.trim();
@@ -161,7 +174,26 @@ class _GameTestScreenState extends State<GameTestScreen> {
         ),
       ),
     );
-    if (mounted) setState(() => _tableOpen = false);
+    if (!mounted) return;
+    setState(() {
+      _tableOpen = false;
+      // Prefer the service's live state — lobby `_connectionState` may lag
+      // one frame behind the stream after Play Again disconnects.
+      if (_gameWs.state != SocketConnectionState.connected) {
+        _clearFinishedRoomLobby();
+      }
+    });
+  }
+
+  /// Drops seat/variant lock from a finished (or abandoned) room without
+  /// requiring Leave/Cancel REST — those only succeed while status is WAITING.
+  void _clearFinishedRoomLobby() {
+    _seatedPlayers = [];
+    _isReady = false;
+    _roomVariant = null;
+    _lastDealJson = null;
+    _currentTurnUserId = null;
+    _roomCodeController.clear();
   }
 
   /// Decodes the `sub` (username) claim out of the JWT payload — client-side
@@ -217,40 +249,58 @@ class _GameTestScreenState extends State<GameTestScreen> {
   }
 
   Future<void> _quickRegister() => _run(() async {
-        final token = await _authApi.quickRegisterTestUser();
-        _tokenController.text = token;
+        final result = await _session.quickRegisterTestUser();
+        _tokenController.text = result.token;
+        _myUsername = result.username;
       });
 
   Future<void> _createRoom() => _run(() async {
-        if (_tokenController.text.isEmpty) {
-          throw Exception('Quick-register (or paste a JWT) first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        // New room ⇒ must not keep sending actions on a previous room's socket.
+        if (_connected) {
+          _gameWs.disconnect();
         }
         final dealsPerMatch = _selectedVariant == 'DEALS' ? 2 : null;
         final room = await _roomApi.createRoom(
-          jwt: _tokenController.text,
           gameVariant: _selectedVariant,
           dealsPerMatch: dealsPerMatch,
         );
+        _syncTokenFieldFromSession();
         _roomCodeController.text = room.roomCode;
         setState(() {
           _seatedPlayers = room.players;
           _roomVariant = room.gameVariant ?? _selectedVariant;
+          _isReady = false;
+          _lastDealJson = null;
+          _currentTurnUserId = null;
         });
       });
 
-  /// Actually seats the current JWT's user into an existing room — needed
+  /// Keep the JWT text field in sync after ApiClient refresh.
+  void _syncTokenFieldFromSession() {
+    final token = _session.accessToken;
+    if (token != null && token.isNotEmpty) {
+      _tokenController.text = token;
+    }
+  }
+
+  /// Actually seats the current session user into an existing room — needed
   /// on every browser/tab *except* the one that created the room, since
   /// creating already auto-seats the creator. Connecting the WebSocket does
   /// NOT seat you; this REST call is the missing step for "need at least 2
   /// seated players to start".
   Future<void> _joinRoom() => _run(() async {
-        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
+        }
+        if (_connected) {
+          _gameWs.disconnect();
         }
         final room = await _roomApi.joinRoom(
-          jwt: _tokenController.text.trim(),
           roomCode: _roomCodeController.text.trim(),
         );
+        _syncTokenFieldFromSession();
         setState(() {
           _seatedPlayers = room.players;
           _roomVariant = room.gameVariant ?? _roomVariant;
@@ -259,13 +309,14 @@ class _GameTestScreenState extends State<GameTestScreen> {
 
   /// Polls the current room's lobby state via REST (no WebSocket needed).
   Future<void> _getRoom() => _run(() async {
-        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
         final room = await _roomApi.getRoom(
-          jwt: _tokenController.text.trim(),
           roomCode: _roomCodeController.text.trim(),
         );
+        _syncTokenFieldFromSession();
         setState(() {
           _seatedPlayers = room.players;
           _roomVariant = room.gameVariant ?? _roomVariant;
@@ -273,60 +324,86 @@ class _GameTestScreenState extends State<GameTestScreen> {
       });
 
   /// Un-seats the caller. If the caller is the host, the whole room is disbanded.
+  /// After a completed match, REST leave fails (room not WAITING) — still unlock
+  /// the lobby locally so a new game type can be chosen.
   Future<void> _leaveRoom() => _run(() async {
-        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
-        await _roomApi.leaveRoom(
-          jwt: _tokenController.text.trim(),
-          roomCode: _roomCodeController.text.trim(),
-        );
-        setState(() {
-          _seatedPlayers = [];
-          _isReady = false;
-          _roomVariant = null;
-        });
+        try {
+          await _roomApi.leaveRoom(
+            roomCode: _roomCodeController.text.trim(),
+          );
+          _syncTokenFieldFromSession();
+        } catch (_) {
+          // Completed / cancelled rooms reject leave — local reset is enough.
+        }
+        setState(_clearFinishedRoomLobby);
       });
 
   /// Host-only: closes a still-waiting room.
   Future<void> _cancelRoom() => _run(() async {
-        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
-        await _roomApi.cancelRoom(
-          jwt: _tokenController.text.trim(),
-          roomCode: _roomCodeController.text.trim(),
-        );
-        setState(() {
-          _seatedPlayers = [];
-          _roomVariant = null;
-        });
+        try {
+          await _roomApi.cancelRoom(
+            roomCode: _roomCodeController.text.trim(),
+          );
+          _syncTokenFieldFromSession();
+        } catch (_) {
+          // Same as leave: finished rooms cannot be cancelled via lobby REST.
+        }
+        setState(_clearFinishedRoomLobby);
       });
 
   /// Toggles the caller's ready flag. Purely informational — START_MATCH doesn't require it.
   Future<void> _toggleReady() => _run(() async {
-        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
-          throw Exception('Quick-register and enter a room code first');
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Enter a room code first');
         }
+        final next = !_isReady;
         final room = await _roomApi.setReady(
-          jwt: _tokenController.text.trim(),
           roomCode: _roomCodeController.text.trim(),
-          ready: !_isReady,
+          ready: next,
         );
+        _syncTokenFieldFromSession();
         setState(() {
-          _isReady = !_isReady;
+          _isReady = next;
           _seatedPlayers = room.players;
         });
       });
 
   Future<void> _connect() => _run(() async {
-        if (_tokenController.text.isEmpty || _roomCodeController.text.isEmpty) {
-          throw Exception('Need a JWT and a room code before connecting');
+        if (_roomCodeController.text.isEmpty) {
+          throw Exception('Need a room code before connecting');
         }
-        _decodeMyUsernameFrom(_tokenController.text.trim());
-        await _gameWs.connect(_roomCodeController.text.trim(), _tokenController.text.trim());
+        await _session.ensureSignedIn(pastedAccessToken: _tokenController.text);
+        // Always mint a fresh access JWT before the WS handshake when a
+        // refresh token exists (same session path as ApiClient REST).
+        if (_session.refreshToken != null && _session.refreshToken!.isNotEmpty) {
+          final refreshed = await _session.refreshAccessToken();
+          if (!refreshed && _session.isAccessExpired) {
+            throw Exception(
+              'Session expired — Quick Register or log in again, then Connect',
+            );
+          }
+        }
+        final jwt = _session.accessToken;
+        if (jwt == null || jwt.isEmpty) {
+          throw Exception('Need a signed-in session before connecting');
+        }
+        _tokenController.text = jwt;
+        _decodeMyUsernameFrom(jwt);
+        await _gameWs.connect(_roomCodeController.text.trim(), jwt);
         if (_gameWs.state != SocketConnectionState.connected) {
-          throw Exception('Game socket did not confirm connection (handshake rejected — check the JWT is still valid)');
+          throw Exception(
+            'Game socket handshake rejected — JWT invalid/expired. '
+            'Quick Register again (access tokens may be short-lived in local config).',
+          );
         }
       });
 
@@ -345,6 +422,17 @@ class _GameTestScreenState extends State<GameTestScreen> {
   }
 
   void _sendStartMatch() {
+    final wanted = _roomCodeController.text.trim();
+    final live = _gameWs.roomCode;
+    if (wanted.isEmpty) {
+      setState(() => _wsErrorMessage = 'Enter a room code before Start Match');
+      return;
+    }
+    if (live == null || live != wanted) {
+      setState(() => _wsErrorMessage =
+          'Socket is on room ${live ?? "(none)"} but UI shows $wanted — Disconnect, then Connect to the new room before Start Match');
+      return;
+    }
     _gameWs.startMatch();
     _appendLocalLog('>> SENT  {"type":"START_MATCH"}');
   }
@@ -543,7 +631,10 @@ class _GameTestScreenState extends State<GameTestScreen> {
                 ChoiceChip(
                   label: Text(v.label),
                   selected: _selectedVariant == v.value,
-                  onSelected: (_busy || _connected || _roomVariant != null)
+                  // Lock only while the game socket is live (in a match).
+                  // A finished room used to leave `_roomVariant` set forever,
+                  // which disabled every chip after Play Again → lobby.
+                  onSelected: (_busy || _connected)
                       ? null
                       : (selected) {
                           if (!selected) return;

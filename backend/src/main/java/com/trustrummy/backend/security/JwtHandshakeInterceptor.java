@@ -1,5 +1,7 @@
 package com.trustrummy.backend.security;
 
+import com.trustrummy.backend.entity.User;
+import com.trustrummy.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.server.ServerHttpRequest;
@@ -12,13 +14,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Rule 2: Intercepts the initial WebSocket HTTP upgrade handshake and
- * validates the JWT BEFORE the socket connection is ever established.
- * <p>
- * The token may be supplied either as a query parameter
- * ({@code ws://host/ws/telemetry?token=...}) since browsers/Flutter's
- * web-socket client cannot set custom headers during the upgrade, or via
- * a Sec-WebSocket-Protocol / Authorization header for native clients.
+ * Validates the JWT on the WebSocket HTTP upgrade, then ensures the subject
+ * maps to an active user before the socket is accepted.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -29,6 +26,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenUtil jwtTokenUtil;
+    private final UserRepository userRepository;
 
     @Override
     public boolean beforeHandshake(
@@ -52,7 +50,20 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         }
 
         String username = jwtTokenUtil.extractUsername(token);
+        if (username == null || username.isBlank()) {
+            response.setStatusCode(org.springframework.http.HttpStatus.UNAUTHORIZED);
+            return false;
+        }
+
+        User user = userRepository.findByUsername(username).orElse(null);
+        if (user == null || !user.isActive()) {
+            log.warn("WebSocket handshake rejected: user missing or inactive ({})", username);
+            response.setStatusCode(org.springframework.http.HttpStatus.UNAUTHORIZED);
+            return false;
+        }
+
         attributes.put("username", username);
+        attributes.put("userId", user.getId());
         attributes.put("token", token);
         return true;
     }

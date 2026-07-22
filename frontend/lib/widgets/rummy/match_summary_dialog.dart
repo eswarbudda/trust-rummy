@@ -131,7 +131,8 @@ class MatchSummaryDialog extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Play Again returns you to the lobby to start a new match.',
+          'Play Again returns you to the lobby to start a new match. '
+          'During a multi-deal match use Start Next Deal on the deal result screen.',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 11),
         ),

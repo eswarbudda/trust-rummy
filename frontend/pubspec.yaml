@@ -24,6 +24,9 @@ dependencies:
   # Local persistence of the JWT between app launches
   shared_preferences: ^2.2.3
 
+  # Secure storage for access + refresh tokens (OS keychain / Keystore)
+  flutter_secure_storage: ^9.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -54,6 +54,9 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   MatchEndedEvent? _matchEndedEvent;
   ScoreUpdateEvent? _lastScoreUpdate;
   DealResultEvent? _dealResult;
+  /// True after the local player requested Leave/EXIT — used to pop back to
+  /// the lobby when the match continues without us (multi-player forfeit).
+  bool _leaveRequested = false;
 
   SocketConnectionState _connectionState = SocketConnectionState.disconnected;
   int _turnSecondsLeft = _turnTimeoutSeconds;
@@ -158,14 +161,20 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
         break;
       case 'SCORE_UPDATE':
         // Keep for the match-result summary; deal UI comes from DEAL_RESULT.
-        _lastScoreUpdate = ScoreUpdateEvent.fromJson(event.raw);
+        setState(() {
+          _lastScoreUpdate = ScoreUpdateEvent.fromJson(event.raw);
+        });
         break;
       case 'DEAL_RESULT':
         if (_matchEnded) return;
         _onDealResult(DealResultEvent.fromJson(event.raw));
         break;
+      case 'PLAYER_ELIMINATED':
+        _onPlayerEliminated(event.raw);
+        break;
       case 'MATCH_ENDED':
         // Protocol event name is MATCH_ENDED (not GAME_COMPLETED).
+        _leaveRequested = false;
         _dealResult = null;
         _onMatchEnded(MatchEndedEvent.fromJson(event.raw));
         break;
@@ -226,6 +235,9 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   void _returnToLobby() {
     if (!mounted) return;
     _dismissTransientDialogs();
+    // Drop the old room socket so the lobby cannot send START_MATCH to a
+    // completed room after the player creates a new one.
+    widget.gameWs.disconnect();
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
@@ -236,16 +248,27 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
     widget.gameWs.startNextDeal();
   }
 
-  /// Leave from deal result: ask the server to end the match, then stay on
-  /// the table until MATCH_ENDED arrives so everyone (including the leaver)
-  /// sees the match summary before returning to lobby.
-  void _leaveFromDealResult() {
+  /// Leave from deal result or active play: ask the server to forfeit / end
+  /// the match, then stay on the table until MATCH_ENDED so everyone
+  /// (including the leaver) sees the match summary. If the match continues
+  /// without us (3+ players), [PLAYER_ELIMINATED] pops us back to lobby.
+  void _requestLeaveTable() {
     if (_matchEnded) {
       _returnToLobby();
       return;
     }
-    if (_dealResult == null) return;
+    _leaveRequested = true;
     widget.gameWs.leaveTable();
+  }
+
+  void _onPlayerEliminated(Map<String, dynamic> raw) {
+    if (!_leaveRequested || _matchEnded || !mounted) return;
+    final eliminatedId = (raw['userId'] as num?)?.toInt();
+    final me = _state.myUserId ?? widget.myUserId;
+    if (me != null && eliminatedId == me) {
+      // Match kept going without us — return to lobby.
+      _returnToLobby();
+    }
   }
 
   void _applyDealJson(Map<String, dynamic> raw, {required bool isFreshDeal}) {
@@ -387,7 +410,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
         backgroundColor: RummyColors.panelBg,
         title: const Text('Drop this deal?', style: TextStyle(color: Colors.white)),
         content: const Text(
-          'You fold this deal and take a penalty. You sit out until the next deal.',
+          'You fold this deal and take a penalty. In a 2-player table this ends the match for everyone.',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -504,13 +527,17 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   void _confirmExit() {
+    if (_matchEnded) {
+      _returnToLobby();
+      return;
+    }
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: RummyColors.panelBg,
         title: const Text('Leave table?', style: TextStyle(color: Colors.white)),
         content: const Text(
-          'Return to the lobby? The game socket stays connected.',
+          'Leave this table? On a 2-player table this ends the match for everyone.',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -519,7 +546,7 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
             style: FilledButton.styleFrom(backgroundColor: RummyColors.danger),
             onPressed: () {
               Navigator.pop(ctx);
-              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+              _requestLeaveTable();
             },
             child: const Text('Leave'),
           ),
@@ -581,12 +608,8 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
       dealWinnerName: _nameFor(_dealResult?.winnerUserId),
       onStartNextDeal: _startNextDeal,
       onPlayAgain: _returnToLobby,
-      onLeaveTable: _matchEnded
-          ? _returnToLobby
-          : (_dealResult != null ? _leaveFromDealResult : _returnToLobby),
-      onExit: _matchEnded
-          ? _returnToLobby
-          : (_dealResult != null ? _leaveFromDealResult : _confirmExit),
+      onLeaveTable: _matchEnded ? _returnToLobby : _requestLeaveTable,
+      onExit: _matchEnded ? _returnToLobby : _confirmExit,
       onCloseDeclareResult: () => setState(() => _lastDeclareResult = null),
       onCardTap: canAct
           ? (index, card) {

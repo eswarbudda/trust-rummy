@@ -79,9 +79,27 @@ public class RoomLifecycleService {
     private void sweepDisconnectedPlayers() {
         Instant cutoff = Instant.now().minus(Duration.ofSeconds(disconnectGraceSeconds));
         for (MatchState match : gameStateService.activeRooms()) {
-            if (match.getStatus() != MatchStatus.IN_PROGRESS) {
+            MatchStatus status = match.getStatus();
+            if (status != MatchStatus.IN_PROGRESS && status != MatchStatus.BETWEEN_DEALS) {
                 continue;
             }
+
+            if (status == MatchStatus.BETWEEN_DEALS) {
+                for (Long userId : List.copyOf(match.getSeatOrder())) {
+                    if (match.getStatus() != MatchStatus.BETWEEN_DEALS) {
+                        break;
+                    }
+                    Instant disconnectedAt = broadcastService.disconnectedSince(match.getRoomCode(), userId).orElse(null);
+                    if (disconnectedAt != null && disconnectedAt.isBefore(cutoff)) {
+                        log.info("Ending match for disconnected player {} in room {} during BETWEEN_DEALS",
+                                userId, match.getRoomCode());
+                        gameEngineRegistry.resolveForRoom(match.getRoomCode())
+                                .forfeitDisconnectedPlayer(match.getRoomCode(), userId);
+                    }
+                }
+                continue;
+            }
+
             Deal deal = match.getCurrentDeal();
             if (deal == null || deal.getStatus() != DealStatus.IN_PROGRESS) {
                 continue;

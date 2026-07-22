@@ -39,10 +39,15 @@ public class JwtTokenUtil {
 
     public JwtTokenUtil(
             @Value("${jwt.secret}") String secret,
-            @Value("${jwt.expiration-ms:86400000}") long expirationMs
+            @Value("${jwt.expiration-ms:900000}") long expirationMs
     ) {
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMs = expirationMs;
+    }
+
+    /** Access-token lifetime in milliseconds (from {@code jwt.expiration-ms}). */
+    public long getExpirationMs() {
+        return expirationMs;
     }
 
     /** Generates a signed JWT for the given authenticated user. */

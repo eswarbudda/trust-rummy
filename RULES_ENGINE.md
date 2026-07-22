@@ -35,14 +35,18 @@ IN_PROGRESS|BETWEEN_DEALS --(match complete)--> COMPLETED
 
 Match completes when:
 - ≤1 active (non-eliminated) player remains, or
-- a heads-up drop walkover occurs, or
+- **Pool** (or a **POINTS** single-deal, or the **final** DEALS deal): the deal ends with ≤1 `PLAYING` seat after one or more `DROP`s (last-player-standing walkover → `MATCH_ENDED`), or
 - **POINTS** — the (only) deal ends (single-deal match; never enters `BETWEEN_DEALS`), or
-- **DEALS** — `dealNumber >= dealsPerMatch`.
+- **DEALS** — `dealNumber >= dealsPerMatch` (lowest cumulative score among still-active seats wins).
 
 **Variant shapes:**
 - `POINTS` — one deal, then `MATCH_ENDED` + stake settle; no `DEAL_RESULT` / `BETWEEN_DEALS`.
 - `DEALS` — fixed N deals (default 2), cumulative scores, `BETWEEN_DEALS` between deals, settle after the final deal.
 - `POOL_101` / `POOL_201` — multi-deal until elimination leaves ≤1 active player (or walkover).
+
+**DEALS with deals remaining:** a heads-up `DROP` ends only the *deal* (dropper gets drop points; opponent wins the deal). The match enters `BETWEEN_DEALS` and continues via `START_NEXT_DEAL` (or the auto countdown). Do **not** treat that screen as match-over — the client’s **Play Again** button is only for `MATCH_ENDED` and returns to the lobby.
+
+`START_MATCH` is rejected unless the durable `GameRoom.status` is still `WAITING` (a completed room cannot be restarted on the same socket).
 
 The moment a match reaches `COMPLETED`, `RummyEngineService#finishMatch` evicts its `MatchState` from `GameStateService` (`gameStateService.remove(roomCode)`) — a naturally-finished match never lingers in memory for the rest of the process's lifetime; only a still-`WAITING`/`IN_PROGRESS` room being disbanded via `RoomService` removed it previously. The durable record from here on is the DB `GameSession` row (§10); the WebSocket channel has nothing further to say about a finished match, and a room can never restart without going through the lobby's `WAITING` flow again.
 
@@ -150,13 +154,13 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 
 | `type` | Extra fields | When legal |
 |---|---|---|
-| `START_MATCH` | — | Match `WAITING`, sender is the room's host, >= 2 seated players |
+| `START_MATCH` | — | Match `WAITING`, durable room status `WAITING`, sender is the room's host, >= 2 seated players |
 | `START_NEXT_DEAL` | — | Match `BETWEEN_DEALS`, sender is an active player |
-| `LEAVE_TABLE` | — | Match `BETWEEN_DEALS`, sender is an active player. Ends the **entire match** immediately (`MATCH_ENDED`); remaining players ranked by lowest cumulative score (sole remaining player wins). |
+| `LEAVE_TABLE` | — | Match `IN_PROGRESS` or `BETWEEN_DEALS`, sender is an active player. Ends the seat immediately (deal forfeit if a deal is live). On a **2-player** table — or whenever ≤1 active player remains — broadcasts `MATCH_ENDED` for everyone. On 3+ tables mid-deal, the leaver is eliminated and the others continue. |
 | `DRAW_CARD` | `source`: `CLOSED` \| `OPEN` | Your turn, `AWAITING_DRAW` (not during `BETWEEN_DEALS`) |
 | `DISCARD_CARD` | `cardCode` (e.g. `"10H"`, `"AS"`, `"JK"`) | Your turn, `AWAITING_DISCARD` |
 | `DECLARE` | `cardCode` — the 14th card you're setting aside; the remaining 13 are validated | Your turn, `AWAITING_DISCARD` |
-| `DROP` | — | Your turn, `AWAITING_DRAW` (before drawing) |
+| `DROP` | — | Your turn, `AWAITING_DRAW` (before drawing). Ends the deal when ≤1 `PLAYING` seat remains. **Pool**, **POINTS**, or **final DEALS** deal: match walkover → `MATCH_ENDED`. **DEALS with deals left:** `DEAL_RESULT` / `BETWEEN_DEALS` → continue with `START_NEXT_DEAL`. |
 
 ```json
 { "type": "DRAW_CARD", "source": "CLOSED" }
@@ -185,6 +189,17 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 | `ERROR` | `message` |
 
 `players[]` entries (deal snapshot shape): `{userId, username, seatNumber, cumulativeScore, matchStatus, roundStatus, handSize, hand? }` — `hand` only present for the viewer's own entry.
+
+### Client result screens (Flutter)
+
+| Event | Overlay | Primary action |
+|---|---|---|
+| `DEAL_RESULT` (`BETWEEN_DEALS`) | Deal Result | **Start Next Deal** (or wait for `autoNextDealSeconds`) — continues the same match |
+| `MATCH_ENDED` | Match Summary | **Play Again** — returns to lobby; does **not** start another deal in the finished room |
+
+Leaving the table / Play Again disconnects the game WebSocket so a later `START_MATCH` cannot target a completed room by mistake.
+
+Authenticated Flutter REST (rooms, profile, wallet, history) always goes through `ApiClient` + `AuthSessionService` — no per-call JWT override. Auth mint/refresh endpoints stay on raw HTTP via `AuthApiService`. `START_MATCH` is a WebSocket action (not REST); Connect refreshes the session access token before the handshake.
 
 ## 10. Persistence
 
@@ -224,10 +239,10 @@ Everything here is pre-/post-game bookkeeping — none of it touches the live de
 
 | Method | Route | Body | Behavior |
 |---|---|---|---|
-| `POST` | `/register` | `{username, email, password, displayName?}` | Creates the user, returns `AuthResponse` (`token`, `refreshToken`, `expiresInMs`). |
+| `POST` | `/register` | `{username, email, password, displayName?}` | Creates the user, returns `AuthResponse` (`token`, `refreshToken`, `expiresInMs`). Access JWT default **15m** (`jwt.expiration-ms`); refresh default **30d** (`jwt.refresh-expiration-ms`). |
 | `POST` | `/login` | `{username, password}` | Same `AuthResponse` shape as register. |
-| `POST` | `/refresh` | `{refreshToken}` | Redeems a still-valid, unrevoked refresh token for a brand-new access + refresh token pair. **Rotates** the refresh token — the old one is marked revoked, so replaying it fails with `400`. |
-| `POST` | `/logout` | `{refreshToken?}` | The access JWT is stateless (no blocklist yet), so this only revokes the given refresh token, if any. Always `204`. |
+| `POST` | `/refresh` | `{refreshToken}` | Redeems a still-valid, unrevoked refresh token for a brand-new access + refresh token pair. **Rotates** the refresh token — the old one is marked revoked, so replaying it fails with `409`. |
+| `POST` | `/logout` | `{refreshToken?}` | Access JWTs are short-lived and stateless (no blocklist); this only revokes the given refresh token, if any. Always `204`. |
 
 **Profile — `/api/v1/users` (JWT required):**
 
@@ -235,7 +250,7 @@ Everything here is pre-/post-game bookkeeping — none of it touches the live de
 |---|---|---|---|
 | `GET` | `/me` | — | `{id, username, email, displayName, walletBalance, role, createdAt}`. |
 | `PUT` | `/me` | `{displayName?, email?}` | Partial update; `409`-style `400` if the new email is already taken. |
-| `PUT` | `/me/password` | `{currentPassword, newPassword}` | `400` if `currentPassword` doesn't match. |
+| `PUT` | `/me/password` | `{currentPassword, newPassword}` | `400` if `currentPassword` doesn't match. **Revokes all active refresh tokens** for that user. |
 
 **Wallet — `/api/v1/wallet` (JWT required):**
 

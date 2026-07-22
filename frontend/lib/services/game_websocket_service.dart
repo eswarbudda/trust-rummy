@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/api_config.dart';
+import 'auth_session_service.dart';
 
 enum SocketConnectionState { disconnected, connecting, connected, error }
 
@@ -17,13 +18,6 @@ enum GameDrawSource {
 }
 
 /// A single inbound event from `/ws/game/{roomCode}`.
-///
-/// Note: the backend does not emit a single generic `GAME_STATE_UPDATE`
-/// type — per `RULES_ENGINE.md` section 9 it emits distinct types
-/// (`ROOM_STATE`, `DEAL_STARTED`, `TURN_STATE`, `CARD_DRAWN`,
-/// `CARD_DISCARDED`, `PLAYER_DROPPED`, `DECLARE_RESULT`, `SCORE_UPDATE`,
-/// `DEAL_RESULT`, `PLAYER_ELIMINATED`, `MATCH_ENDED`, `ERROR`) that all flow through this
-/// same parsed-event pipeline; [type] tells you which one this is.
 class GameSocketEvent {
   final String type;
   final Map<String, dynamic> raw;
@@ -32,21 +26,26 @@ class GameSocketEvent {
   GameSocketEvent(this.type, this.raw) : receivedAt = DateTime.now();
 }
 
-/// WebSocket controller for the real gameplay channel
-/// (`/ws/game/{roomCode}`). Deliberately raw/minimal for this phase: it
-/// connects, sends typed action envelopes, and exposes both a parsed
-/// event stream and the exact raw-JSON-string stream (for a traffic audit
-/// board) — no card-graphics-aware state modeling yet, per design.
+/// WebSocket controller for `/ws/game/{roomCode}`.
+///
+/// When [resumeWithSession] is true (default), an unexpected disconnect
+/// triggers one access-token refresh + reconnect attempt.
 class GameWebSocketService {
+  GameWebSocketService({AuthSessionService? session}) : _session = session ?? AuthSessionService.instance;
+
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
 
+  final AuthSessionService _session;
   final _stateController = StreamController<SocketConnectionState>.broadcast();
   final _eventController = StreamController<GameSocketEvent>.broadcast();
   final _rawController = StreamController<String>.broadcast();
 
   SocketConnectionState _state = SocketConnectionState.disconnected;
   String? _roomCode;
+  bool _intentionalDisconnect = false;
+  bool _resumeAttempted = false;
+  bool _resumeWithSession = true;
 
   Stream<SocketConnectionState> get stateStream => _stateController.stream;
   Stream<GameSocketEvent> get eventStream => _eventController.stream;
@@ -57,29 +56,35 @@ class GameWebSocketService {
   SocketConnectionState get state => _state;
   String? get roomCode => _roomCode;
 
-  Future<void> connect(String roomCode, String jwt) async {
+  Future<void> connect(
+    String roomCode,
+    String jwt, {
+    bool resumeWithSession = true,
+  }) async {
+    _subscription?.cancel();
+    _subscription = null;
+    try {
+      await _channel?.sink.close();
+    } catch (_) {}
+    _channel = null;
+
     _roomCode = roomCode;
+    _resumeWithSession = resumeWithSession;
+    _intentionalDisconnect = false;
+    _resumeAttempted = false;
     _setState(SocketConnectionState.connecting);
 
     try {
       final uri = ApiConfig.gameWsUri(roomCode, jwt);
       final channel = WebSocketChannel.connect(uri);
 
-      // `WebSocketChannel.connect` returns synchronously, before the
-      // handshake (including the backend's JWT check in
-      // JwtHandshakeInterceptor) actually completes. Awaiting `ready` is
-      // what actually confirms the connection — and surfaces a rejected
-      // handshake (e.g. expired/invalid token, server down) as an error
-      // instead of leaving the UI showing "connected" against a socket
-      // that never truly opened, which previously let Draw/Discard button
-      // presses vanish into a dead channel with zero feedback.
       await channel.ready;
 
       _channel = channel;
       _subscription = channel.stream.listen(
         _handleMessage,
-        onError: (_) => _setState(SocketConnectionState.error),
-        onDone: () => _setState(SocketConnectionState.disconnected),
+        onError: (_) => _onUnexpectedClose(),
+        onDone: _onUnexpectedClose,
       );
 
       _setState(SocketConnectionState.connected);
@@ -90,9 +95,31 @@ class GameWebSocketService {
   }
 
   void disconnect() {
+    _intentionalDisconnect = true;
     _subscription?.cancel();
     _channel?.sink.close();
     _channel = null;
+    _setState(SocketConnectionState.disconnected);
+  }
+
+  Future<void> _onUnexpectedClose() async {
+    if (_intentionalDisconnect) {
+      _setState(SocketConnectionState.disconnected);
+      return;
+    }
+
+    if (_resumeWithSession && !_resumeAttempted && _roomCode != null) {
+      _resumeAttempted = true;
+      _setState(SocketConnectionState.connecting);
+      final refreshed = await _session.refreshAccessToken();
+      final token = _session.accessToken;
+      if (refreshed && token != null && token.isNotEmpty) {
+        // Fresh connect resets resumeAttempted so a later drop can try once more.
+        await connect(_roomCode!, token, resumeWithSession: _resumeWithSession);
+        return;
+      }
+    }
+
     _setState(SocketConnectionState.disconnected);
   }
 
@@ -131,10 +158,6 @@ class GameWebSocketService {
     try {
       _channel!.sink.add(jsonEncode(action));
     } catch (e) {
-      // A write to a dead/closing channel (e.g. the server's idle timeout
-      // already closed it) used to throw straight out of a button's
-      // onPressed callback with no visible feedback. Surface it through
-      // the normal event stream instead so the test screen can show it.
       _setState(SocketConnectionState.error);
       _eventController.add(GameSocketEvent('CLIENT_ERROR', {
         'message': 'Failed to send action "${action['type']}": $e',
