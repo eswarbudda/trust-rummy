@@ -20,6 +20,7 @@ import com.trustrummy.backend.game.model.GroupingResult;
 import com.trustrummy.backend.game.model.MatchPlayerStatus;
 import com.trustrummy.backend.game.model.MatchStatus;
 import com.trustrummy.backend.game.model.Meld;
+import com.trustrummy.backend.game.model.MeldType;
 import com.trustrummy.backend.game.model.RoundStatus;
 import com.trustrummy.backend.game.model.TurnPhase;
 import com.trustrummy.backend.game.model.Value;
@@ -653,9 +654,19 @@ public class RummyEngineService implements GameEngine {
         DeclareResult result = handValidator.validateDeclare(hand, deal.getWildValue());
         deal.discard(setAside);
 
+        // Always reveal the finish card + grouping (including unmatched on wrong show).
+        List<Meld> revealMelds = new ArrayList<>(
+                result.getMelds() != null ? result.getMelds() : List.of());
+        revealMelds.add(new Meld(MeldType.SET_ASIDE, List.of(setAside)));
+        DeclareResult broadcastResult = DeclareResult.builder()
+                .valid(result.isValid())
+                .reason(result.getReason())
+                .melds(revealMelds)
+                .build();
+
         persistenceService.recordMove(match.getRoomCode(), userId, MoveType.DECLARE,
                 "{\"valid\":" + result.isValid() + "}", nextSequence(match.getRoomCode()));
-        broadcastDeclareResult(match, userId, result);
+        broadcastDeclareResult(match, userId, broadcastResult);
 
         if (result.isValid()) {
             deal.getRoundStatus().put(userId, RoundStatus.DECLARED_VALID);
@@ -1014,7 +1025,12 @@ public class RummyEngineService implements GameEngine {
         List<Map<String, Object>> melds = new ArrayList<>();
         for (Meld meld : result.getMelds()) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("type", meld.getType().name());
+            MeldType type = meld.getType();
+            m.put("type", type.name());
+            // UNMATCHED leftover cards are the failed groups. SET_ASIDE is the
+            // finish card (informational), not a failed meld.
+            boolean ok = type == MeldType.SET_ASIDE || (type != null && type.isLegalGroup());
+            m.put("ok", ok);
             m.put("cards", meld.getCards().stream().map(Card::getCode).toList());
             melds.add(m);
         }

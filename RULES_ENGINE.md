@@ -117,8 +117,10 @@ A declare is valid iff the 13 cards can be partitioned into exactly 4 disjoint g
 
 Implemented as bitmask-indexed backtracking over precomputed candidate melds (13 cards → at most `C(13,3)+C(13,4)` ≈ 1000 candidates to classify, trivial to search exhaustively).
 
+On a **wrong show**, validation still returns a best-effort grouping (`computeBestGrouping`) so clients can reveal the hand: legal melds stay typed as usual, leftover cards are packaged as an `UNMATCHED` meld, and `reason` explains the failure (e.g. unmatched cards, missing pure sequence, or fewer than two sequences). The engine then appends the finish card as `SET_ASIDE` before broadcasting `DECLARE_RESULT`.
+
 **Assumptions** (spec was silent/ambiguous on these):
-- Ace ranks low only — sequences never wrap King→Ace.
+- Ace may rank **low** (A-2-3) or **high** (Q-K-A, J-Q-K-A). Sequences never wrap (K-A-2 is illegal).
 - Jokers may fill **sets** as well as impure sequences (standard convention; the spec's set example just didn't show one).
 - A meld candidate needs at least one *natural* (non-joker) anchor card — an all-joker "group" is disallowed as ambiguous.
 
@@ -181,7 +183,7 @@ Every outbound state event is built **per recipient** (`GameBroadcastService#bro
 | `CARD_DRAWN` | Same deal snapshot shape (drawer's own `hand` included only for them) |
 | `CARD_DISCARDED` | Same deal snapshot shape |
 | `PLAYER_DROPPED` | Same deal snapshot shape |
-| `DECLARE_RESULT` | `userId`, `valid`, `reason`, `melds[]` (`{type, cards[]}`) |
+| `DECLARE_RESULT` | `userId`, `valid`, `reason`, `melds[]` (`{type, cards[], ok}`). On any declare (valid or wrong), `melds` is the best-effort grouping of the 13 cards plus a `SET_ASIDE` entry for the 14th finish card. Wrong shows include leftover cards as `UNMATCHED` (`ok: false`) so the whole room can see which groups failed; legal groups still have `ok: true`. Types: `PURE_SEQUENCE`, `IMPURE_SEQUENCE`, `SET`, `UNMATCHED`, `SET_ASIDE`. |
 | `SCORE_UPDATE` | `dealNumber`, `scores[]` (`{userId, username, roundPoints, cumulativeScore, matchStatus}`) |
 | `DEAL_RESULT` | `dealNumber`, `dealsPlayed`, `dealsPerMatch`, `winnerUserId`, `matchStatus`, `matchComplete`, `scores[]`, `eliminatedUserIds[]`, `autoNextDealSeconds` |
 | `PLAYER_ELIMINATED` | `userId` (optional `reason`, e.g. `LEFT_TABLE`) |
@@ -219,7 +221,7 @@ Connecting the game WebSocket does **not** seat a player — it only opens a cha
 |---|---|---|---|
 | `GET` | `/api/v1/rooms/{roomCode}` | — | Room detail incl. `players[]`. `404` if the room code doesn't exist. |
 | `POST` | `/api/v1/rooms/{roomCode}/join` | — | Seats the caller at the next free seat. Idempotent — re-joining an already-seated (and not-`LEFT`) room is a no-op; re-joining after having `LEFT` reactivates the same seat. `404` if room not found, `409` if full or `status != WAITING`. |
-| `POST` | `/api/v1/rooms/{roomCode}/leave` | — | Un-seats the caller (marks `RoomPlayer.status = LEFT`) while `status == WAITING`. If the **host** leaves, the whole room is disbanded (`status -> CANCELLED`, every seat marked `LEFT`) — nobody else can ever send a valid `START_MATCH` for it. `404` if not seated, `409` if the room already started. |
+| `POST` | `/api/v1/rooms/{roomCode}/leave` | — | Un-seats the caller (marks `RoomPlayer.status = LEFT`) while `status == WAITING`. If the **host** leaves, the whole room is disbanded (`status -> CANCELLED`, every seat marked `LEFT`) — nobody else can ever send a valid `START_MATCH` for it. **Idempotent** when the room is already `CANCELLED`/`COMPLETED` or the caller is already `LEFT` (returns 204) so guests can always dismiss after a host disband. `409` only if the room is `IN_PROGRESS`. |
 | `DELETE` | `/api/v1/rooms/{roomCode}` | — | Host-only: disbands a still-`WAITING` room (same effect as the host leaving). `403` if caller isn't the host, `409` if already started. |
 | `PUT` | `/api/v1/rooms/{roomCode}/ready` | `{ready: boolean}` | Toggles the caller's `RoomPlayer.status` between `JOINED`/`READY`. Purely informational for now — `START_MATCH` does not currently require all seats to be `READY`. |
 

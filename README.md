@@ -82,6 +82,25 @@ By default the app targets `localhost:8080`. Override with:
 flutter run -d chrome --dart-define=API_HOST=192.168.1.10:8080
 ```
 
+### Background images (lobby + game board)
+
+Bundled defaults live in `frontend/assets/images/`. Paths, enable flags, and scrim strength
+are configurable via `--dart-define` (see `lib/config/ui_config.dart`):
+
+```bash
+flutter run --dart-define=LOBBY_BG_ASSET=assets/images/lobby_bg.png \
+  --dart-define=LOBBY_SCRIM_PERCENT=65 \
+  --dart-define=BOARD_BG_ASSET=assets/images/board_bg.png \
+  --dart-define=BOARD_SCRIM_PERCENT=42
+
+# Or remote images (falls back to asset on load failure):
+flutter run --dart-define=LOBBY_BG_URL=https://cdn.example.com/lobby.jpg \
+  --dart-define=BOARD_BG_URL=https://cdn.example.com/board.jpg
+
+# Disable and use solid/gradient fallbacks:
+flutter run --dart-define=LOBBY_BG_ENABLED=false --dart-define=BOARD_BG_ENABLED=false
+```
+
 ## Security model (Phase 1)
 
 - Stateless JWT auth — no HTTP sessions (`SessionCreationPolicy.STATELESS`).

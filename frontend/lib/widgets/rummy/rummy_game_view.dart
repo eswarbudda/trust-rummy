@@ -4,7 +4,9 @@ import '../../models/card.dart' as rummy;
 import '../../models/game_state.dart';
 import '../../theme/rummy_colors.dart';
 import '../../theme/rummy_layout.dart';
+import '../common/screen_background.dart';
 import 'deal_result_dialog.dart';
+import 'declare_result_panel.dart';
 import 'hand_view.dart';
 import 'match_summary_dialog.dart';
 import 'rummy_action_bar.dart';
@@ -164,8 +166,8 @@ class RummyGameView extends StatelessWidget {
   Widget build(BuildContext context) {
     final L = layout;
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: RummyColors.boardGradient),
+      backgroundColor: Colors.transparent,
+      body: ScreenBackground.board(
         child: SafeArea(
           child: Stack(
             children: [
@@ -208,9 +210,8 @@ class RummyGameView extends StatelessWidget {
                       layout: layout,
                       selectedIndex: selectedIndex,
                       groupBreaksAfterIndex: groupBreaksAfterIndex,
-                      declareResult: declareResult,
-                      declareResultName: declareResultName,
-                      onCloseDeclareResult: onCloseDeclareResult,
+                      // Declare panel is rendered above deal/match overlays
+                      // so a wrong show stays visible until dismissed.
                       onCardTap: onCardTap,
                       onToggleGroupBreak: onToggleGroupBreak,
                       onMoveCard: onMoveCard,
@@ -248,6 +249,14 @@ class RummyGameView extends StatelessWidget {
                   opponents: opponents,
                   onPlayAgain: onPlayAgain,
                   onLeaveTable: onLeaveTable,
+                ),
+              // Above deal/match overlays so everyone can inspect a wrong show
+              // before continuing to scores.
+              if (declareResult != null)
+                DeclareResultPanel(
+                  declarerName: declareResultName ?? 'Player',
+                  result: declareResult!,
+                  onClose: onCloseDeclareResult ?? () {},
                 ),
             ],
           ),

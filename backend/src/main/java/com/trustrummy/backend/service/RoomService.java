@@ -141,20 +141,30 @@ public class RoomService {
      * leaves, the whole room is disbanded — nobody else has "host powers"
      * (only {@code GameRoom.createdBy} can send START_MATCH), so a
      * host-less waiting room could never actually start.
+     * <p>
+     * Idempotent when the room is already {@code CANCELLED}/{@code COMPLETED}
+     * or the caller is no longer seated (e.g. host disbanded and marked
+     * everyone {@code LEFT}) — guests must be able to dismiss the lobby UI.
      */
     public void leaveRoom(String username, String roomCode) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown user: " + username));
 
         GameRoom room = getRoomByCode(roomCode);
+        if (room.getStatus() == RoomStatus.CANCELLED || room.getStatus() == RoomStatus.COMPLETED) {
+            return;
+        }
         if (room.getStatus() != RoomStatus.WAITING) {
             throw new IllegalStateException("Cannot leave a room that has already started; drop from the active match instead");
         }
 
-        RoomPlayer player = roomPlayerRepository.findByGameRoomIdAndUserId(room.getId(), user.getId())
-                .filter(rp -> rp.getStatus() != PlayerStatus.LEFT)
-                .orElseThrow(() -> new ResourceNotFoundException("You are not seated in this room"));
+        Optional<RoomPlayer> seated = roomPlayerRepository.findByGameRoomIdAndUserId(room.getId(), user.getId())
+                .filter(rp -> rp.getStatus() != PlayerStatus.LEFT);
+        if (seated.isEmpty()) {
+            return;
+        }
 
+        RoomPlayer player = seated.get();
         boolean isHost = room.getCreatedBy() != null && room.getCreatedBy().getId().equals(user.getId());
         if (isHost) {
             disbandRoom(room);

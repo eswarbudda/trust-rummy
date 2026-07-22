@@ -387,7 +387,19 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
     final remaining = List<rummy.Card>.from(_hand)..removeAt(extraIndex);
     final breaksForRemaining = _groupBreaks.where((i) => i != extraIndex).map((i) => i > extraIndex ? i - 1 : i).toSet();
     final groups = HandGrouping.splitIntoGroups(remaining, breaksForRemaining);
-    final melds = [for (final group in groups) MeldView(type: _classifyGroup(group), cards: group)];
+    final melds = <MeldView>[];
+    for (final group in groups) {
+      final type = group.length >= 3 ? _classifyGroup(group) : 'UNMATCHED';
+      final legal = type == 'SET' ||
+          type == 'SEQUENCE' ||
+          type == 'PURE_SEQUENCE' ||
+          type == 'IMPURE_SEQUENCE';
+      melds.add(MeldView(
+        type: legal ? type : 'UNMATCHED',
+        cards: group,
+        ok: legal,
+      ));
+    }
 
     showModalBottomSheet<void>(
       context: context,
@@ -444,17 +456,16 @@ class _RummyTableMockupScreenState extends State<RummyTableMockupScreen> {
                             ..clear()
                             ..addAll(shifted);
 
-                          final looksValid = melds.length >= 2 &&
-                              melds.every((m) => m.type == 'SET' || m.type == 'SEQUENCE' || m.type == 'PURE_SEQUENCE');
+                          final looksValid = melds.isNotEmpty && melds.every((m) => m.ok);
                           _lastDeclareResult = DeclareResultEvent(
                             userId: 1,
                             valid: looksValid,
                             reason: looksValid
                                 ? 'Declared melds are shown on the board for everyone. Finish card sits in the Finish Slot.'
-                                : 'Not all groups form a valid set or sequence — mockup preview only, the server has the final say',
+                                : 'Wrong show — highlighted cards are not in a valid set or sequence (mockup preview)',
                             melds: [
                               ...melds,
-                              MeldView(type: 'SET_ASIDE', cards: [extraCard]),
+                              MeldView(type: 'SET_ASIDE', cards: [extraCard], ok: true),
                             ],
                           );
                         });

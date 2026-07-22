@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/home_screen.dart';
+import 'screens/auth_gate.dart';
 import 'services/auth_session_service.dart';
 
 Future<void> main() async {
@@ -33,7 +33,7 @@ class TrustRummyApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: const HomeScreen(),
+      home: const AuthGate(),
     );
   }
 }

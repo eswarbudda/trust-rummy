@@ -135,6 +135,12 @@ class MatchLifecycleCleanupIntegrationTest extends AbstractGameIntegrationTest {
             Map<String, Object> declareResult = assertEvent(firstMover, "DECLARE_RESULT");
             assertEvent(secondMover, "DECLARE_RESULT");
             assertThat(declareResult.get("valid")).isEqualTo(false);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> melds = (List<Map<String, Object>>) declareResult.get("melds");
+            assertThat(melds).isNotEmpty();
+            assertThat(melds).allSatisfy(m -> assertThat(m).containsKey("ok"));
+            assertThat(melds).anySatisfy(m -> assertThat(m.get("type")).isEqualTo("SET_ASIDE"));
+            assertThat(declareResult.get("reason")).asString().containsIgnoringCase("Wrong show");
 
             assertEvent(firstMover, "SCORE_UPDATE");
             assertEvent(secondMover, "SCORE_UPDATE");

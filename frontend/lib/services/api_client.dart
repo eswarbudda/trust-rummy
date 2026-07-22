@@ -87,6 +87,18 @@ class ApiClient {
       }
     }
 
+    // Spring used to answer missing/expired JWT with 403; keep a one-shot
+    // refresh retry so older backends still recover.
+    if (response.statusCode == 403 &&
+        !isRetry &&
+        _session.refreshToken != null &&
+        _session.refreshToken!.isNotEmpty) {
+      final refreshed = await _session.refreshAccessToken();
+      if (refreshed) {
+        return _send(method, uri, body: body, isRetry: true);
+      }
+    }
+
     return response;
   }
 }

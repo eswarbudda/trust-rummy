@@ -1,0 +1,225 @@
+import 'package:flutter/material.dart';
+
+import '../lobby/lobby_controller.dart';
+import '../services/auth_session_service.dart';
+import '../services/room_api_service.dart';
+import '../widgets/lobby/active_tables_section.dart';
+import '../widgets/lobby/create_table_dialog.dart';
+import '../widgets/lobby/game_variant_card.dart';
+import '../widgets/lobby/join_room_dialog.dart';
+import '../widgets/lobby/lobby_header.dart';
+import '../widgets/lobby/quick_actions_section.dart';
+import '../widgets/lobby/recent_games_section.dart';
+import '../widgets/lobby/resume_match_section.dart';
+import '../widgets/common/screen_background.dart';
+import 'home_screen.dart';
+import 'waiting_room_screen.dart';
+
+class LobbyScreen extends StatefulWidget {
+  const LobbyScreen({super.key});
+
+  @override
+  State<LobbyScreen> createState() => _LobbyScreenState();
+}
+
+class _LobbyScreenState extends State<LobbyScreen> {
+  late final LobbyController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = LobbyController();
+    _controller.load();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openCreate({String initialVariant = 'POOL_101'}) async {
+    final result = await CreateTableDialog.show(context, initialVariant: initialVariant);
+    if (result == null || !mounted) return;
+    try {
+      final room = await _controller.createRoom(
+        gameVariant: result.gameVariant,
+        maxPlayers: result.maxPlayers,
+        stakeAmount: result.stakeAmount,
+        dealsPerMatch: result.dealsPerMatch,
+      );
+      if (!mounted) return;
+      await _openWaiting(room, isHost: true);
+      await _controller.load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _openJoin([String? presetCode]) async {
+    final code = presetCode ?? await JoinRoomDialog.show(context);
+    if (code == null || !mounted) return;
+    try {
+      final room = await _controller.joinRoom(code);
+      if (!mounted) return;
+      await _openWaiting(room, isHost: false);
+      await _controller.load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _openWaiting(CreatedRoom room, {required bool isHost}) {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WaitingRoomScreen(
+          lobby: _controller,
+          roomCode: room.roomCode,
+          isHost: isHost,
+          initialRoom: room,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _resume() async {
+    final info = _controller.resumeMatch;
+    if (info == null) return;
+    try {
+      final room = await _controller.refreshRoom(info.roomCode);
+      final me = AuthSessionService.instance.username;
+      final isHost = room.players.any((p) => p.username == me && p.seatNumber == 0);
+      if (!mounted) return;
+      await _openWaiting(room, isHost: isHost);
+      await _controller.load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      await _controller.load();
+    }
+  }
+
+  void _openSettings() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.developer_mode),
+                title: const Text('Dev tools'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Log out'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _controller.logout();
+                  if (context.mounted) {
+                    // AuthGate rebuilds via session notify.
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        return ListenableBuilder(
+          listenable: AuthSessionService.instance,
+          builder: (context, _) {
+            return Scaffold(
+              backgroundColor: Colors.transparent,
+              body: ScreenBackground.lobby(
+                child: SafeArea(
+                  child: RefreshIndicator(
+                    onRefresh: _controller.load,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 960),
+                        child: CustomScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                              sliver: SliverList(
+                                delegate: SliverChildListDelegate([
+                                  LobbyHeader(
+                                    controller: _controller,
+                                    onSettings: _openSettings,
+                                  ),
+                                  const SizedBox(height: 24),
+                                  if (_controller.loading && _controller.profile == null)
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 48),
+                                      child: Center(child: CircularProgressIndicator()),
+                                    )
+                                  else ...[
+                                    if (_controller.errorMessage != null) ...[
+                                      Text(
+                                        _controller.errorMessage!,
+                                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                      ),
+                                      const SizedBox(height: 12),
+                                    ],
+                                    QuickActionsSection(
+                                      onCreateTable: () => _openCreate(),
+                                      onJoinWithCode: () => _openJoin(),
+                                    ),
+                                    if (_controller.resumeMatch != null) ...[
+                                      const SizedBox(height: 24),
+                                      ResumeMatchSection(
+                                        info: _controller.resumeMatch!,
+                                        onResume: _resume,
+                                      ),
+                                    ],
+                                    const SizedBox(height: 28),
+                                    GameVariantsSection(
+                                      onSelectVariant: (v) => _openCreate(initialVariant: v),
+                                    ),
+                                    const SizedBox(height: 28),
+                                    ActiveTablesSection(
+                                      rooms: _controller.openRooms,
+                                      onJoin: (room) => _openJoin(room.roomCode),
+                                    ),
+                                    const SizedBox(height: 28),
+                                    RecentGamesSection(
+                                      matches: _controller.recentMatches,
+                                      myUsername: AuthSessionService.instance.username,
+                                    ),
+                                  ],
+                                ]),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}

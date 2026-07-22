@@ -36,14 +36,19 @@ import java.util.TreeSet;
  * natural SET). Candidate generation below tries every 3- and 4-card
  * combination independently, so both interpretations are explored.
  * <p>
- * Assumption: Ace only ranks low (A,2,3...Q,K) — sequences never wrap
- * around from King to Ace.
+ * Assumption: Ace may rank low (A-2-3) or high (Q-K-A / J-Q-K-A). Sequences
+ * never wrap around (K-A-2 is illegal).
  */
 @Component
 public class HandValidator {
 
     private static final int MIN_GROUP_SIZE = 3;
     private static final int MAX_GROUP_SIZE = 4;
+    /** Ace-low ladder: ACE=0 … KING=12. */
+    private static final int RANK_CEILING_LOW = 12;
+    /** Ace-high ladder: TWO=1 … KING=12, ACE=13. */
+    private static final int RANK_FLOOR_HIGH = 1;
+    private static final int RANK_CEILING_HIGH = 13;
 
     // ------------------------------------------------------------------
     // Strict declare validation
@@ -65,11 +70,46 @@ public class HandValidator {
         if (result != null) {
             return DeclareResult.builder().valid(true).melds(result).reason("Valid declaration").build();
         }
+
+        // Wrong show: still reveal best-effort groups + unmatched cards so the
+        // whole room can see which cards / pairs failed the declare rules.
+        GroupingResult grouping = computeBestGrouping(hand, wildValue);
+        List<Meld> reveal = new ArrayList<>(grouping.getMelds());
+        if (!grouping.getLeftoverCards().isEmpty()) {
+            reveal.add(new Meld(MeldType.UNMATCHED, grouping.getLeftoverCards()));
+        }
         return DeclareResult.builder()
                 .valid(false)
-                .melds(List.of())
-                .reason("Hand does not satisfy the pure-sequence + second-sequence grouping rules")
+                .melds(reveal)
+                .reason(diagnoseInvalidDeclare(grouping))
                 .build();
+    }
+
+    /**
+     * Explains why a best-effort grouping is still an invalid declare
+     * (missing pure sequence, second sequence, or leftover cards).
+     */
+    private static String diagnoseInvalidDeclare(GroupingResult grouping) {
+        boolean hasPure = false;
+        int sequenceCount = 0;
+        for (Meld meld : grouping.getMelds()) {
+            if (meld.getType() == MeldType.PURE_SEQUENCE) {
+                hasPure = true;
+            }
+            if (meld.getType() != null && meld.getType().isSequence()) {
+                sequenceCount++;
+            }
+        }
+        if (!grouping.getLeftoverCards().isEmpty()) {
+            return "Wrong show — highlighted cards are not in a valid set or sequence";
+        }
+        if (!hasPure) {
+            return "Wrong show — need at least one pure sequence (no jokers)";
+        }
+        if (sequenceCount < 2) {
+            return "Wrong show — need at least two sequences (including one pure)";
+        }
+        return "Wrong show — hand does not satisfy declare grouping rules";
     }
 
     private List<Meld> backtrackDeclare(
@@ -285,14 +325,33 @@ public class HandValidator {
         return true;
     }
 
+    /**
+     * Same-suit run. Ace may be low (A-2-3…) or high (…Q-K-A); K-A-2 wrap is
+     * never allowed. Tries ace-low first, then ace-high when an Ace is present.
+     */
     private MeldType classifySequence(List<Card> naturals, int jokerCount) {
+        MeldType low = classifySequenceRanks(naturals, jokerCount, false);
+        if (low != null) {
+            return low;
+        }
+        boolean hasAce = false;
+        for (Card c : naturals) {
+            if (c.getValue() == Value.ACE) {
+                hasAce = true;
+                break;
+            }
+        }
+        return hasAce ? classifySequenceRanks(naturals, jokerCount, true) : null;
+    }
+
+    private MeldType classifySequenceRanks(List<Card> naturals, int jokerCount, boolean aceHigh) {
         Suit suit = naturals.get(0).getSuit();
         Set<Integer> ranks = new TreeSet<>();
         for (Card c : naturals) {
             if (c.getSuit() != suit) {
                 return null; // sequences must be single-suit
             }
-            int rank = c.getValue().ordinal(); // ACE=0 ... KING=12, no wraparound
+            int rank = sequenceRank(c.getValue(), aceHigh);
             if (!ranks.add(rank)) {
                 return null; // duplicate rank within a sequence
             }
@@ -306,12 +365,22 @@ public class HandValidator {
             return null;
         }
         int extension = jokerCount - internalGaps;
-        int roomBelow = min;
-        int roomAbove = 12 - max;
+        int floor = aceHigh ? RANK_FLOOR_HIGH : 0;
+        int ceiling = aceHigh ? RANK_CEILING_HIGH : RANK_CEILING_LOW;
+        int roomBelow = min - floor;
+        int roomAbove = ceiling - max;
         if (roomBelow + roomAbove < extension) {
-            return null; // not enough room within A..K bounds to place remaining jokers
+            return null; // not enough room to place remaining jokers
         }
         return jokerCount == 0 ? MeldType.PURE_SEQUENCE : MeldType.IMPURE_SEQUENCE;
+    }
+
+    /** Rank used inside a sequence attempt (ace-low: 0…12, ace-high: 1…13). */
+    private static int sequenceRank(Value value, boolean aceHigh) {
+        if (value == Value.ACE) {
+            return aceHigh ? RANK_CEILING_HIGH : 0;
+        }
+        return value.ordinal(); // TWO=1 … KING=12
     }
 
     private List<int[]> combinationsOfSize(int n, int k) {

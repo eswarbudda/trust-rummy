@@ -203,14 +203,22 @@ class DealSnapshot {
 class MeldView {
   final String type;
   final List<Card> cards;
+  /// False for `UNMATCHED` leftover cards on a wrong show.
+  final bool ok;
 
-  const MeldView({required this.type, required this.cards});
+  const MeldView({required this.type, required this.cards, this.ok = true});
 
   factory MeldView.fromJson(Map<String, dynamic> json) {
     final cardsField = json['cards'];
+    final type = json['type'] as String? ?? 'SET';
+    final okField = json['ok'];
+    final ok = okField is bool
+        ? okField
+        : (type != 'UNMATCHED');
     return MeldView(
-      type: json['type'] as String? ?? 'SET',
+      type: type,
       cards: cardsField is List ? cardsField.map((c) => Card.fromCode(c as String)).toList() : const [],
+      ok: ok,
     );
   }
 }

@@ -14,6 +14,7 @@ class AuthSessionStore {
   static const _kRefresh = 'tr_refresh_token';
   static const _kUsername = 'tr_username';
   static const _kExpiresAtMs = 'tr_access_expires_at_ms';
+  static const _kLastRoomCode = 'tr_last_room_code';
 
   final FlutterSecureStorage _storage;
 
@@ -40,6 +41,8 @@ class AuthSessionStore {
       _storage.delete(key: _kRefresh),
       _storage.delete(key: _kUsername),
       _storage.delete(key: _kExpiresAtMs),
+      // Keep last room code across logout so resume can still be attempted
+      // after re-login. Clear via [clearLastRoomCode] when the room is finished.
     ]);
   }
 
@@ -54,4 +57,11 @@ class AuthSessionStore {
     if (raw == null || raw.isEmpty) return null;
     return int.tryParse(raw);
   }
+
+  Future<void> saveLastRoomCode(String roomCode) =>
+      _storage.write(key: _kLastRoomCode, value: roomCode.trim().toUpperCase());
+
+  Future<String?> readLastRoomCode() => _storage.read(key: _kLastRoomCode);
+
+  Future<void> clearLastRoomCode() => _storage.delete(key: _kLastRoomCode);
 }

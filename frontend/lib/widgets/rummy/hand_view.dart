@@ -300,14 +300,29 @@ class HandView extends StatelessWidget {
   }
 
   /// Returns PURE_SEQUENCE / SEQUENCE, or null if invalid.
+  ///
+  /// Ace may be low (A-2-3) or high (Q-K-A / J-Q-K-A). K-A-2 wrap is never legal.
   static String? _classifySequence(List<rummy.Card> naturals, int jokerCount, int groupLength) {
+    final low = _classifySequenceRanks(naturals, jokerCount, groupLength, aceHigh: false);
+    if (low != null) return low;
+    final hasAce = naturals.any((c) => c.value == rummy.Value.ace);
+    if (!hasAce) return null;
+    return _classifySequenceRanks(naturals, jokerCount, groupLength, aceHigh: true);
+  }
+
+  static String? _classifySequenceRanks(
+    List<rummy.Card> naturals,
+    int jokerCount,
+    int groupLength, {
+    required bool aceHigh,
+  }) {
     if (naturals.first.suit == null) return null;
     final suit = naturals.first.suit!;
     final ranks = <int>{};
     for (final c in naturals) {
       if (c.suit != suit) return null;
-      final r = _rankOrder(c); // ACE=0 … KING=12
-      if (r < 0 || !ranks.add(r)) return null; // duplicate rank
+      final r = _sequenceRank(c, aceHigh: aceHigh);
+      if (r < 0 || !ranks.add(r)) return null; // duplicate / joker-as-natural
     }
 
     final sorted = ranks.toList()..sort();
@@ -317,16 +332,22 @@ class HandView extends StatelessWidget {
     final internalGaps = span - naturals.length;
     if (internalGaps < 0 || internalGaps > jokerCount) return null;
 
-    // Leftover jokers must extend the run without leaving A–K.
     final extension = jokerCount - internalGaps;
-    final roomBelow = min;
-    final roomAbove = 12 - max;
+    final floor = aceHigh ? 1 : 0; // TWO…ACE(high) or ACE(low)…KING
+    final ceiling = aceHigh ? 13 : 12;
+    final roomBelow = min - floor;
+    final roomAbove = ceiling - max;
     if (roomBelow + roomAbove < extension) return null;
 
-    // Contiguous group length must match naturals + jokers used in this meld.
     if (naturals.length + jokerCount != groupLength) return null;
 
     return jokerCount == 0 ? 'PURE_SEQUENCE' : 'SEQUENCE';
+  }
+
+  /// Ace-low: ACE=0…KING=12. Ace-high: TWO=1…KING=12, ACE=13.
+  static int _sequenceRank(rummy.Card c, {required bool aceHigh}) {
+    if (c.value == rummy.Value.ace) return aceHigh ? 13 : 0;
+    return _rankOrder(c);
   }
 
   /// Ace-low ordinal matching backend [Value.ordinal] (ACE=0 … KING=12).

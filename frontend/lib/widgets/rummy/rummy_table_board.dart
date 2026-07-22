@@ -6,7 +6,6 @@ import '../../models/card.dart' as rummy;
 import '../../models/game_state.dart';
 import '../../theme/rummy_layout.dart';
 import 'card_piles_view.dart';
-import 'declare_result_panel.dart';
 import 'hand_view.dart';
 import 'player_seat_view.dart';
 import 'table_surface.dart';
@@ -37,9 +36,6 @@ class RummyTableBoard extends StatelessWidget {
   final RummyLayout layout;
   final int? selectedIndex;
   final Set<int> groupBreaksAfterIndex;
-  final DeclareResultEvent? declareResult;
-  final String? declareResultName;
-  final VoidCallback? onCloseDeclareResult;
 
   final void Function(int index, rummy.Card card)? onCardTap;
   final void Function(int index)? onToggleGroupBreak;
@@ -68,9 +64,6 @@ class RummyTableBoard extends StatelessWidget {
     this.layout = RummyLayout.standard,
     this.selectedIndex,
     this.groupBreaksAfterIndex = const {},
-    this.declareResult,
-    this.declareResultName,
-    this.onCloseDeclareResult,
     this.onCardTap,
     this.onToggleGroupBreak,
     this.onMoveCard,
@@ -130,12 +123,6 @@ class RummyTableBoard extends StatelessWidget {
                                   onFinishDrop: onFinishDrop,
                                 ),
                               ),
-                              if (declareResult != null)
-                                DeclareResultPanel(
-                                  declarerName: declareResultName ?? 'Player',
-                                  result: declareResult!,
-                                  onClose: onCloseDeclareResult ?? () {},
-                                ),
                             ],
                           );
                         },
