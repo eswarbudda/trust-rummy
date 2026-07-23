@@ -1,6 +1,7 @@
 package com.trustrummy.backend.notifications;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -12,8 +13,6 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -38,8 +37,9 @@ public class NotificationEntity {
     @Column(nullable = false, length = 64)
     private String type;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(nullable = false, columnDefinition = "jsonb")
+    /** JSON object stored as TEXT for portable Hibernate schema validation. */
+    @Convert(converter = NotificationPayloadConverter.class)
+    @Column(name = "payload", nullable = false, columnDefinition = "text")
     @Builder.Default
     private Map<String, Object> payload = new HashMap<>();
 
