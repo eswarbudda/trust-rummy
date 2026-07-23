@@ -94,6 +94,23 @@ class ApiConfig {
   static Uri get notificationsReadAllUri =>
       Uri.parse('$httpBaseUrl/api/v1/notifications/read-all');
 
+  // ---- Friends (/api/v1/friends) ----
+
+  static Uri get friendsUri => Uri.parse('$httpBaseUrl/api/v1/friends');
+
+  static Uri get friendsRequestsUri => Uri.parse('$httpBaseUrl/api/v1/friends/requests');
+
+  static Uri friendRequestAcceptUri(int id) =>
+      Uri.parse('$httpBaseUrl/api/v1/friends/requests/$id/accept');
+
+  static Uri friendRequestDeclineUri(int id) =>
+      Uri.parse('$httpBaseUrl/api/v1/friends/requests/$id/decline');
+
+  static Uri friendUri(int userId) => Uri.parse('$httpBaseUrl/api/v1/friends/$userId');
+
+  static Uri friendBlockUri(int userId) =>
+      Uri.parse('$httpBaseUrl/api/v1/friends/$userId/block');
+
   /// Gameplay WebSocket for a specific room, per `RULES_ENGINE.md` section 9.
   static Uri gameWsUri(String roomCode, String token) =>
       Uri.parse('$wsBaseUrl/ws/game/$roomCode?token=$token');

@@ -13,6 +13,7 @@ import '../widgets/lobby/recent_games_section.dart';
 import '../widgets/lobby/resume_match_section.dart';
 import '../widgets/common/screen_background.dart';
 import '../theme/lobby_theme.dart';
+import 'friends_screen.dart';
 import 'home_screen.dart';
 import 'waiting_room_screen.dart';
 
@@ -191,6 +192,13 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                     QuickActionsSection(
                                       onCreateTable: () => _openCreate(),
                                       onJoinWithCode: () => _openJoin(),
+                                      onFriends: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => const FriendsScreen(),
+                                          ),
+                                        );
+                                      },
                                     ),
                                     if (_controller.resumeMatch != null) ...[
                                       const SizedBox(height: 24),

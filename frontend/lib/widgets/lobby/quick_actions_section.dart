@@ -10,10 +10,12 @@ class QuickActionsSection extends StatelessWidget {
     super.key,
     required this.onCreateTable,
     required this.onJoinWithCode,
+    this.onFriends,
   });
 
   final VoidCallback onCreateTable;
   final VoidCallback onJoinWithCode;
+  final VoidCallback? onFriends;
 
   static const _chipSize = 138.0;
   static const _chipColors = [LobbyColors.chipMaroon, LobbyColors.chipMaroonDeep];
@@ -56,6 +58,15 @@ class QuickActionsSection extends StatelessWidget {
                 icon: Icons.vpn_key_rounded,
                 size: _chipSize,
                 onPressed: onJoinWithCode,
+              ),
+              PokerChipAction(
+                label: 'Friends',
+                subtitle: 'Social',
+                colors: _chipColors,
+                rimColor: LobbyColors.cream,
+                icon: Icons.people_alt_rounded,
+                size: _chipSize,
+                onPressed: onFriends,
               ),
             ];
 
