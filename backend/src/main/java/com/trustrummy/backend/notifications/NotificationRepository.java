@@ -27,10 +27,15 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update NotificationEntity n
-               set n.status = com.trustrummy.backend.notifications.NotificationStatus.READ,
+               set n.status = :readStatus,
                    n.readAt = :readAt
              where n.userId = :userId
-               and n.status = com.trustrummy.backend.notifications.NotificationStatus.UNREAD
+               and n.status = :unreadStatus
             """)
-    int markAllRead(@Param("userId") Long userId, @Param("readAt") Instant readAt);
+    int markAllRead(
+            @Param("userId") Long userId,
+            @Param("readAt") Instant readAt,
+            @Param("readStatus") NotificationStatus readStatus,
+            @Param("unreadStatus") NotificationStatus unreadStatus
+    );
 }

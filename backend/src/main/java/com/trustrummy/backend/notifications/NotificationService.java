@@ -69,7 +69,12 @@ public class NotificationService implements NotificationPort {
     @Override
     @Transactional
     public int markAllRead(long userId) {
-        return notificationRepository.markAllRead(userId, Instant.now());
+        return notificationRepository.markAllRead(
+                userId,
+                Instant.now(),
+                NotificationStatus.READ,
+                NotificationStatus.UNREAD
+        );
     }
 
     @Override

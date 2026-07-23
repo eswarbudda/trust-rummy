@@ -3,7 +3,6 @@ package com.trustrummy.backend.notifications;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trustrummy.backend.presence.PresenceService;
 import com.trustrummy.backend.presence.UserSessionRegistry;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -16,13 +15,23 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class WebSocketNotificationDelivery implements NotificationDeliveryPort {
 
     private final PresenceService presenceService;
     private final UserSessionRegistry userSessionRegistry;
     private final NotificationRepository notificationRepository;
     private final ObjectMapper objectMapper;
+
+    public WebSocketNotificationDelivery(
+            PresenceService presenceService,
+            UserSessionRegistry userSessionRegistry,
+            NotificationRepository notificationRepository
+    ) {
+        this.presenceService = presenceService;
+        this.userSessionRegistry = userSessionRegistry;
+        this.notificationRepository = notificationRepository;
+        this.objectMapper = new ObjectMapper();
+    }
 
     @Override
     public void deliver(NotificationView notification) {
