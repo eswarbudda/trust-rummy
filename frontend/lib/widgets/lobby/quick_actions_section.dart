@@ -20,7 +20,7 @@ class QuickActionsSection extends StatelessWidget {
   final VoidCallback? onRecentPlayers;
 
   static const _chipSize = 138.0;
-  static const _chipColors = [LobbyColors.chipMaroon, LobbyColors.chipMaroonDeep];
+  static const _chipColors = [Color(0xFFC9A634), Color(0xFFAE7F0A), Color(0xFF846313)];
 
   @override
   Widget build(BuildContext context) {

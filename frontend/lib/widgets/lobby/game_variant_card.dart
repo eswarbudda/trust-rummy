@@ -12,15 +12,18 @@ class GameVariantCard extends StatelessWidget {
     required this.entry,
     this.onTap,
     this.tiltRadians = 0,
+    this.width = 128,
   });
 
   final ({String value, String label, String description, String players}) entry;
   final VoidCallback? onTap;
   final double tiltRadians;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
     final suit = LobbyColors.suitForVariant(entry.value);
+    final height = width / 0.72;
 
     final card = Transform.rotate(
       angle: tiltRadians,
@@ -28,22 +31,24 @@ class GameVariantCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           child: Ink(
+            width: width,
+            height: height,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
               color: LobbyColors.gameCardGreen,
-              border: Border.all(color: LobbyColors.brandGreen.withValues(alpha: 0.55), width: 2.2),
+              border: Border.all(color: LobbyColors.gold.withValues(alpha: 0.55), width: 1.8),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(2, 6),
+                  blurRadius: 10,
+                  offset: const Offset(2, 5),
                 ),
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -53,7 +58,7 @@ class GameVariantCard extends StatelessWidget {
                       Text(
                         suit,
                         style: const TextStyle(
-                          fontSize: 42,
+                          fontSize: 28,
                           color: LobbyColors.chipMaroon,
                           fontWeight: FontWeight.w800,
                           height: 1,
@@ -61,36 +66,40 @@ class GameVariantCard extends StatelessWidget {
                       ),
                       const Spacer(),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: LobbyColors.brandGreen.withValues(alpha: 0.22),
+                          color: LobbyColors.gold.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(99),
-                          border: Border.all(color: LobbyColors.brandGreen.withValues(alpha: 0.55)),
+                          border: Border.all(color: LobbyColors.gold.withValues(alpha: 0.55)),
                         ),
                         child: Text(
                           entry.players.replaceAll(' players', ''),
-                          style: LobbyText.label(size: 9, color: LobbyColors.brandGreen),
+                          style: LobbyText.legacyLabel(size: 10, color: LobbyColors.gold),
                         ),
                       ),
                     ],
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 8),
                   Text(
                     entry.label,
-                    style: LobbyText.body(size: 14, weight: FontWeight.w800, color: LobbyColors.gameCardLabel),
+                    style: LobbyText.legacyBody(
+                      size: 14,
+                      weight: FontWeight.w800,
+                      color: LobbyColors.gameCardLabel,
+                    ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     entry.description,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: LobbyText.body(
+                    style: LobbyText.legacyBody(
                       size: 11,
                       color: LobbyColors.gameRuleText,
                       weight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const Spacer(),
                   Align(
                     alignment: Alignment.bottomRight,
                     child: Transform.rotate(
@@ -98,7 +107,7 @@ class GameVariantCard extends StatelessWidget {
                       child: Text(
                         suit,
                         style: const TextStyle(
-                          fontSize: 22,
+                          fontSize: 16,
                           color: LobbyColors.chipMaroon,
                           fontWeight: FontWeight.w800,
                           height: 1,
@@ -114,7 +123,7 @@ class GameVariantCard extends StatelessWidget {
       ),
     );
 
-    return AspectRatio(aspectRatio: 0.72, child: card);
+    return card;
   }
 }
 
@@ -124,6 +133,7 @@ class GameVariantsSection extends StatelessWidget {
   final void Function(String variant)? onSelectVariant;
 
   static const _tilts = <double>[-0.06, 0.04, -0.03, 0.07];
+  static const _cardWidth = 128.0;
 
   @override
   Widget build(BuildContext context) {
@@ -136,30 +146,21 @@ class GameVariantsSection extends StatelessWidget {
           subtitle: 'Fan through the hand and tap a card to deal.',
         ),
         const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 720;
-            final crossAxisCount = wide ? 4 : 2;
-            return GridView.builder(
-              itemCount: LobbyVariants.entries.length,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: crossAxisCount,
-                mainAxisSpacing: 18,
-                crossAxisSpacing: 14,
-                childAspectRatio: 0.72,
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 14,
+          runSpacing: 16,
+          children: [
+            for (var index = 0; index < LobbyVariants.entries.length; index++)
+              GameVariantCard(
+                entry: LobbyVariants.entries[index],
+                width: _cardWidth,
+                tiltRadians: _tilts[index % _tilts.length],
+                onTap: onSelectVariant == null
+                    ? null
+                    : () => onSelectVariant!(LobbyVariants.entries[index].value),
               ),
-              itemBuilder: (context, index) {
-                final e = LobbyVariants.entries[index];
-                return GameVariantCard(
-                  entry: e,
-                  tiltRadians: _tilts[index % _tilts.length],
-                  onTap: onSelectVariant == null ? null : () => onSelectVariant!(e.value),
-                );
-              },
-            );
-          },
+          ],
         ),
       ],
     );

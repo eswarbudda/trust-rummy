@@ -29,9 +29,9 @@ class ResumeMatchSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('TABLE STILL OPEN', style: LobbyText.label(size: 11, color: LobbyColors.cream)),
+          Text('TABLE STILL OPEN', style: LobbyText.label(size: 13, color: LobbyColors.cream)),
           const SizedBox(height: 4),
-          Text('Jump back in 🎲', style: LobbyText.section(size: 24)),
+          Text('Jump back in 🎲', style: LobbyText.section(size: 26)),
           const SizedBox(height: 8),
           Text(
             'Room ${info.roomCode} · ${LobbyVariants.labelFor(info.gameVariant)} · '
@@ -42,14 +42,14 @@ class ResumeMatchSection extends StatelessWidget {
           FilledButton.icon(
             onPressed: onResume,
             style: FilledButton.styleFrom(
-              backgroundColor: LobbyColors.chipYellow,
+              backgroundColor: LobbyColors.gold,
               foregroundColor: LobbyColors.ink,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             ),
             icon: const Icon(Icons.play_arrow_rounded),
             label: Text(
               'Resume Match',
-              style: LobbyText.body(size: 14, weight: FontWeight.w800, color: LobbyColors.ink),
+              style: LobbyText.body(size: 16, weight: FontWeight.w800, color: LobbyColors.ink),
             ),
           ),
         ],

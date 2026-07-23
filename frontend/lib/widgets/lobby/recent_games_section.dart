@@ -66,7 +66,7 @@ class RecentGamesSection extends StatelessWidget {
                 : (won ? 'Won' : (m.status == 'COMPLETED' ? 'Lost' : m.status));
             final resultColor = m.status == 'ABORTED'
                 ? LobbyColors.creamMuted
-                : (won ? LobbyColors.emerald : LobbyColors.coral);
+                : (won ? LobbyColors.gold : LobbyColors.coral);
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: LobbyPanel(
@@ -83,7 +83,7 @@ class RecentGamesSection extends StatelessWidget {
                       ),
                       child: Text(
                         result.toUpperCase(),
-                        style: LobbyText.label(size: 10, color: resultColor),
+                        style: LobbyText.label(size: 12, color: resultColor),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -93,12 +93,12 @@ class RecentGamesSection extends StatelessWidget {
                         children: [
                           Text(
                             '$dateLabel · ${LobbyVariants.labelFor(m.gameVariant)}',
-                            style: LobbyText.body(size: 13, weight: FontWeight.w600),
+                            style: LobbyText.body(size: 15, weight: FontWeight.w600),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             'Score ${m.myFinalScore ?? '—'} · ${m.roomCode}',
-                            style: LobbyText.bodyMuted(size: 12),
+                            style: LobbyText.bodyMuted(size: 14),
                           ),
                         ],
                       ),
@@ -112,14 +112,14 @@ class RecentGamesSection extends StatelessWidget {
             const SizedBox(height: 4),
             LobbyPanel(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              borderColor: LobbyColors.feltBright.withValues(alpha: 0.35),
+              borderColor: LobbyColors.gold.withValues(alpha: 0.35),
               child: Row(
                 children: [
                   IconButton(
                     tooltip: 'Previous page',
                     onPressed: loading || onPrev == null ? null : onPrev,
                     style: IconButton.styleFrom(
-                      foregroundColor: LobbyColors.chipYellow,
+                      foregroundColor: LobbyColors.gold,
                       disabledForegroundColor: LobbyColors.creamMuted.withValues(alpha: 0.35),
                     ),
                     icon: const Icon(Icons.chevron_left_rounded),
@@ -130,14 +130,14 @@ class RecentGamesSection extends StatelessWidget {
                           ? '${matches.length} hands'
                           : 'Page ${page + 1} of $totalPages · $totalElements hands',
                       textAlign: TextAlign.center,
-                      style: LobbyText.bodyMuted(size: 12),
+                      style: LobbyText.bodyMuted(size: 14),
                     ),
                   ),
                   IconButton(
                     tooltip: 'Next page',
                     onPressed: loading || onNext == null ? null : onNext,
                     style: IconButton.styleFrom(
-                      foregroundColor: LobbyColors.chipYellow,
+                      foregroundColor: LobbyColors.gold,
                       disabledForegroundColor: LobbyColors.creamMuted.withValues(alpha: 0.35),
                     ),
                     icon: const Icon(Icons.chevron_right_rounded),

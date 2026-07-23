@@ -61,14 +61,14 @@ class ActiveTablesSection extends StatelessWidget {
                         children: [
                           Text(
                             '${room.roomCode} · ${LobbyVariants.labelFor(room.gameVariant)}',
-                            style: LobbyText.body(size: 14, weight: FontWeight.w700),
+                            style: LobbyText.body(size: 16, weight: FontWeight.w700),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             '${room.status}'
                             '${room.maxPlayers != null ? ' · max ${room.maxPlayers}' : ''}'
                             '${room.stakeAmount != null ? ' · stake ${UiConfig.formatMoney(room.stakeAmount!)}' : ''}',
-                            style: LobbyText.bodyMuted(size: 12),
+                            style: LobbyText.bodyMuted(size: 14),
                           ),
                         ],
                       ),

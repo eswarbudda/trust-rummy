@@ -69,9 +69,8 @@ class CardPilesView extends StatelessWidget {
   }
 
   Widget _closedDeckWithJoker() {
-    final stackDepth = closedDeckCount.clamp(0, 5).toInt();
     final joker = cutJokerCard;
-    final canDraw = onDrawClosed != null;
+    final canDraw = onDrawClosed != null && closedDeckCount > 0;
     final L = layout;
 
     // Cut joker lies landscape under the closed deck; left + bottom peek stay readable.
@@ -86,6 +85,7 @@ class CardPilesView extends StatelessWidget {
     final deckBottom = joker != null ? (jokerPeekDown + 4 * L.scale) : 4.0 * L.scale;
     final jokerBottom = 0.0;
 
+    // Single pack look (not a 5-card spread) — slight thickness edge only.
     final stack = SizedBox(
       width: boxW,
       height: boxH,
@@ -107,11 +107,32 @@ class CardPilesView extends StatelessWidget {
                 ),
               ),
             ),
-          for (var i = 0; i < stackDepth; i++)
+          if (closedDeckCount > 0) ...[
             Positioned(
-              left: deckLeft + i * L.pileStackOffsetX,
-              bottom: deckBottom + i * L.pileStackOffsetY,
+              left: deckLeft + 2.5 * L.scale,
+              bottom: deckBottom + 2.5 * L.scale,
               child: PlayingCardView(faceUp: false, width: _w, height: _h),
+            ),
+            Positioned(
+              left: deckLeft,
+              bottom: deckBottom,
+              child: PlayingCardView(faceUp: false, width: _w, height: _h),
+            ),
+          ] else
+            Positioned(
+              left: deckLeft,
+              bottom: deckBottom,
+              child: Container(
+                width: _w,
+                height: _h,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.28),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Icon(Icons.style, color: Colors.white.withValues(alpha: 0.4), size: 22),
+              ),
             ),
         ],
       ),
@@ -119,8 +140,8 @@ class CardPilesView extends StatelessWidget {
 
     final labeled = _labeledPile(
       stack,
-      joker != null ? 'OPEN JOKER' : '',
-      joker != null ? RummyColors.gold : Colors.transparent,
+      joker != null ? 'OPEN JOKER' : 'CLOSED DECK',
+      joker != null ? RummyColors.gold : Colors.white70,
       highlight: canDraw,
     );
 
@@ -226,44 +247,35 @@ class CardPilesView extends StatelessWidget {
 
   Widget _discardBundle() {
     final pile = discardPile;
-    // Mock: multi-card discard history bundle.
+    // Face-up fan of open cards (oldest under → newest on top).
     if (pile != null && pile.isNotEmpty) {
-      final top = pile.last;
-      final under = pile.length > 1 ? pile.sublist(0, pile.length - 1).reversed.take(3).toList() : <rummy.Card>[];
-      const step = 2.2;
-      final layers = under.length;
-      final boxW = _w + layers * step;
-      final boxH = _h + layers * step;
+      final visible = pile.length > 5 ? pile.sublist(pile.length - 5) : List<rummy.Card>.from(pile);
+      final n = visible.length;
+      final spread = 18.0 * layout.scale;
+      final boxW = _w + (n - 1) * spread;
+      final boxH = _h + 10 * layout.scale;
 
       return SizedBox(
         width: boxW,
         height: boxH,
         child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            for (var i = 0; i < layers; i++)
+            for (var i = 0; i < n; i++)
               Positioned(
-                left: i * step,
-                top: i * step,
-                child: Opacity(
-                  opacity: 0.85,
+                left: i * spread,
+                top: (n - 1 - i).abs() * 0.8,
+                child: Transform.rotate(
+                  angle: (i - (n - 1) / 2) * 0.08,
+                  alignment: Alignment.bottomCenter,
                   child: PlayingCardView(
-                    card: under[layers - 1 - i],
-                    isWild: under[layers - 1 - i].isWildFor(wildValue),
+                    card: visible[i],
+                    isWild: visible[i].isWildFor(wildValue),
                     width: _w,
                     height: _h,
                   ),
                 ),
               ),
-            Positioned(
-              left: layers * step,
-              top: layers * step,
-              child: PlayingCardView(
-                card: top,
-                isWild: top.isWildFor(wildValue),
-                width: _w,
-                height: _h,
-              ),
-            ),
           ],
         ),
       );
@@ -285,11 +297,11 @@ class CardPilesView extends StatelessWidget {
       height: _h,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.28),
+        color: Colors.black.withValues(alpha: 0.28),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white24),
       ),
-      child: Icon(Icons.arrow_forward, color: Colors.white.withOpacity(0.45), size: 22),
+      child: Icon(Icons.arrow_forward, color: Colors.white.withValues(alpha: 0.45), size: 22),
     );
   }
 

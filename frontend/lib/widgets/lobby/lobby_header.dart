@@ -30,24 +30,29 @@ class LobbyHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('TRUST RUMMY', style: LobbyText.label(size: 11, color: LobbyColors.feltBright)),
+                  Text('TRUST RUMMY', style: LobbyText.label(size: 15, color: LobbyColors.gold)),
                   const SizedBox(height: 2),
-                  Text('Hit the tables', style: LobbyText.brand(size: 34)),
+                  Text('Hit the tables', style: LobbyText.brand(size: 42)),
                   const SizedBox(height: 4),
                   Text(
                     'Shuffle · Group · Show  ♣ ♦',
-                    style: LobbyText.bodyMuted(size: 13),
+                    style: LobbyText.bodyMuted(size: 15),
                   ),
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: WalletBalanceCard(balance: controller.walletBalance),
+            ),
+            const SizedBox(width: 8),
             IconButton(
               tooltip: 'Settings',
               onPressed: onSettings,
               style: IconButton.styleFrom(
                 backgroundColor: LobbyColors.inkSoft.withValues(alpha: 0.8),
-                foregroundColor: LobbyColors.chipYellow,
-                side: BorderSide(color: LobbyColors.chipYellow.withValues(alpha: 0.45)),
+                foregroundColor: LobbyColors.gold,
+                side: BorderSide(color: LobbyColors.gold.withValues(alpha: 0.45)),
               ),
               icon: const Icon(Icons.settings_rounded),
             ),
@@ -58,11 +63,11 @@ class LobbyHeader extends StatelessWidget {
         const SizedBox(height: 16),
         LobbyPanel(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          borderColor: LobbyColors.feltBright.withValues(alpha: 0.45),
+          borderColor: LobbyColors.gold.withValues(alpha: 0.45),
           gradient: LinearGradient(
             colors: [
-              LobbyColors.felt.withValues(alpha: 0.45),
-              LobbyColors.inkSoft.withValues(alpha: 0.92),
+              LobbyColors.inkSoft.withValues(alpha: 0.95),
+              LobbyColors.ink.withValues(alpha: 0.92),
             ],
           ),
           child: Row(
@@ -85,7 +90,7 @@ class LobbyHeader extends StatelessWidget {
                 ),
                 child: Text(
                   initial,
-                  style: LobbyText.brand(size: 24, color: LobbyColors.cardRed),
+                  style: LobbyText.brand(size: 26, color: LobbyColors.cardRed),
                 ),
               ),
               const SizedBox(width: 14),
@@ -93,13 +98,16 @@ class LobbyHeader extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(name, style: LobbyText.body(size: 17, weight: FontWeight.w800), overflow: TextOverflow.ellipsis),
+                    Text(
+                      name,
+                      style: LobbyText.body(size: 19, weight: FontWeight.w800),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     const SizedBox(height: 2),
-                    Text('Your seat is warm ♥', style: LobbyText.bodyMuted(size: 12)),
+                    Text('Your seat is warm ♥', style: LobbyText.bodyMuted(size: 14)),
                   ],
                 ),
               ),
-              WalletBalanceCard(balance: controller.walletBalance),
             ],
           ),
         ),
@@ -119,10 +127,10 @@ class WalletBalanceCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(99),
-        color: LobbyColors.chipYellow,
+        color: LobbyColors.gold,
         boxShadow: [
           BoxShadow(
-            color: LobbyColors.chipYellow.withValues(alpha: 0.35),
+            color: LobbyColors.gold.withValues(alpha: 0.35),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -133,7 +141,7 @@ class WalletBalanceCard extends StatelessWidget {
         children: [
           Text(
             UiConfig.formatMoney(balance),
-            style: LobbyText.body(size: 15, weight: FontWeight.w800, color: LobbyColors.ink),
+            style: LobbyText.body(size: 17, weight: FontWeight.w800, color: LobbyColors.ink),
           ),
         ],
       ),
@@ -166,7 +174,7 @@ class _NotificationBadgeButton extends StatelessWidget {
           style: IconButton.styleFrom(
             backgroundColor: LobbyColors.inkSoft.withValues(alpha: 0.8),
             foregroundColor: LobbyColors.cream,
-            side: BorderSide(color: LobbyColors.sectionTitle.withValues(alpha: 0.45)),
+            side: BorderSide(color: LobbyColors.gold.withValues(alpha: 0.45)),
           ),
           icon: Badge(
             isLabelVisible: unread > 0,

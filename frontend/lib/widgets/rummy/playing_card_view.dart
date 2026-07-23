@@ -132,13 +132,29 @@ class PlayingCardView extends StatelessWidget {
   Widget _buildBack() {
     return Container(
       decoration: const BoxDecoration(gradient: RummyColors.cardBackGradient),
-      child: Center(
-        child: Container(
-          width: width * 0.5,
-          height: height * 0.5,
-          decoration: BoxDecoration(
-            border: Border.all(color: RummyColors.cardBackAccent, width: 1.4),
-            borderRadius: BorderRadius.circular(6),
+      child: CustomPaint(
+        painter: const _CardBackPatternPainter(),
+        child: Center(
+          child: Container(
+            width: width * 0.62,
+            height: height * 0.72,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: RummyColors.cardBackAccent, width: 1.6),
+              color: const Color(0x22000000),
+            ),
+            child: Center(
+              child: Text(
+                '♠♥\n♦♣',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: RummyColors.cardBackAccent.withValues(alpha: 0.9),
+                  fontSize: width * 0.18,
+                  height: 1.05,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -159,4 +175,38 @@ class PlayingCardView extends StatelessWidget {
         return '';
     }
   }
+}
+
+/// Black lattice / diamond pattern on the red closed-deck pack.
+class _CardBackPatternPainter extends CustomPainter {
+  const _CardBackPatternPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = RummyColors.cardBackAccent.withValues(alpha: 0.28)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1;
+
+    const step = 10.0;
+    for (var x = -size.height; x < size.width + size.height; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x + size.height, size.height), paint);
+      canvas.drawLine(Offset(x, size.height), Offset(x + size.height, 0), paint);
+    }
+
+    final border = Paint()
+      ..color = RummyColors.cardBackAccent.withValues(alpha: 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(3, 3, size.width - 6, size.height - 6),
+        const Radius.circular(5),
+      ),
+      border,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

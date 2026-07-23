@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Funky online-rummy lobby palette — felt green, card red, chip yellow.
+/// Funky online-rummy lobby palette — forest felt with gold accents.
 /// Playful table-night energy (not luxury lounge).
 class LobbyColors {
   LobbyColors._();
 
-  static const Color ink = Color(0xFF0A1F18);
-  static const Color inkSoft = Color(0xFF123528);
-  static const Color felt = Color(0xFF148F5A);
-  static const Color feltBright = Color(0xFF22C57A);
+  static const Color ink = Color(0xFF071A12);
+  static const Color inkSoft = Color(0xFF0F2A1C);
+  /// Forest green felt (table base).
+  static const Color felt = Color(0xFF1B4332);
+  static const Color feltBright = Color(0xFF2D6A4F);
   static const Color cream = Color(0xFFFFF8EE);
   static const Color creamMuted = Color(0xFFD7CBB8);
   static const Color chipYellow = Color(0xFFFFD84D);
@@ -19,23 +20,31 @@ class LobbyColors {
   static const Color wildPink = Color(0xFFFF5CA8);
   static const Color chipMaroon = Color(0xFF8B1A3A);
   static const Color chipMaroonDeep = Color(0xFF5C0F26);
+  /// Warm brown for quick-action tiles / wood chrome (lightened for readability).
+  static const Color woodBrown = Color(0xFF8B5E3C);
+  static const Color woodBrownDeep = Color(0xFF6A452C);
+  static const Color woodBrownLight = Color(0xFFA0724A);
   static const Color suitRed = Color(0xFFD32F2F);
   static const Color suitBlack = Color(0xFF1A1A1A);
+
+  /// Primary lobby accent (titles, borders, highlights).
+  static const Color gold = chipYellow;
   /// Hero title ("Hit the tables")
-  static const Color heroTitle = Color(0xFFFFD84D);
-  /// Brand / accent green — same as "TRUST RUMMY" label
-  static const Color brandGreen = feltBright;
-  /// Dark green fill for Pick-your-rummy game-mode cards
-  static const Color gameCardGreen = Color(0xFF0D3D2C);
+  static const Color heroTitle = gold;
+  /// Brand accent stays gold; forest green lives on felt/table surfaces.
+  static const Color brandGreen = gold;
+  /// Dark forest fill for Pick-your-rummy game-mode cards.
+  static const Color gameCardGreen = Color(0xFF0D2818);
   /// Section titles ("Quick actions", "Pick your rummy", …)
-  static const Color sectionTitle = brandGreen;
-  /// Rule blurbs on game-mode cards (warm gold on dark green)
+  static const Color sectionTitle = gold;
+  /// Rule blurbs on game-mode cards
   static const Color gameRuleText = Color(0xFFFFE08A);
-  /// Primary label text on dark green game cards
-  static const Color gameCardLabel = Color(0xFFFFF8EE);
+  /// Primary label text on dark game cards
+  static const Color gameCardLabel = cream;
+  /// Muted copy on dark panels
+  static const Color textMuted = creamMuted;
 
   // Aliases used by existing widgets
-  static const Color gold = chipYellow;
   static const Color emerald = feltBright;
   static const Color teal = openBlue;
   static const Color coral = cardRed;
@@ -47,24 +56,27 @@ class LobbyColors {
   static const LinearGradient pageFallback = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF0F3D2C), Color(0xFF122018), Color(0xFF2A1014)],
+    colors: [Color(0xFF0D2818), Color(0xFF122018), Color(0xFF2A1014)],
   );
 
   static const LinearGradient brandTint = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [
-      Color(0x2222C57A),
-      Color(0x18148F5A),
+      Color(0x221B4332),
+      Color(0x18FFD84D),
       Color(0x332A1014),
     ],
   );
 
-  static const LinearGradient quickActionMaroon = LinearGradient(
+  static const LinearGradient quickActionBrown = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [chipMaroon, chipMaroonDeep],
+    colors: [woodBrownLight, woodBrown, woodBrownDeep],
   );
+
+  /// @Deprecated Prefer [quickActionBrown].
+  static const LinearGradient quickActionMaroon = quickActionBrown;
 
   static Color accentForVariant(String value) {
     switch (value) {
@@ -75,7 +87,7 @@ class LobbyColors {
       case 'POOL_101':
         return feltBright;
       case 'POOL_201':
-        return chipYellow;
+        return gold;
       default:
         return jokerOrange;
     }
@@ -103,30 +115,45 @@ class LobbyColors {
 class LobbyText {
   LobbyText._();
 
-  static TextStyle brand({double size = 34, Color? color}) => GoogleFonts.fredoka(
+  // Previous fonts (kept for easy rollback): display = Fredoka, body = Nunito.
+  // Current trial: display = Rowdies (catchy slab), body = Rubik (clean readable).
+
+  static TextStyle brand({double size = 40, Color? color}) => GoogleFonts.rowdies(
         fontSize: size,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.2,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0.3,
         height: 1.05,
         color: color ?? LobbyColors.heroTitle,
       );
 
-  static TextStyle section({double size = 22, Color? color}) => GoogleFonts.fredoka(
+  static TextStyle section({double size = 24, Color? color}) => GoogleFonts.rowdies(
         fontSize: size,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.1,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0.2,
         color: color ?? LobbyColors.sectionTitle,
       );
 
-  static TextStyle label({double size = 12, Color? color, FontWeight weight = FontWeight.w700}) =>
-      GoogleFonts.nunito(
+  static TextStyle label({double size = 14, Color? color, FontWeight weight = FontWeight.w700}) =>
+      GoogleFonts.rubik(
         fontSize: size,
         fontWeight: weight,
         letterSpacing: 1.4,
-        color: color ?? LobbyColors.chipYellow,
+        color: color ?? LobbyColors.gold,
       );
 
-  static TextStyle body({double size = 14, Color? color, FontWeight weight = FontWeight.w600}) =>
+  static TextStyle body({double size = 16, Color? color, FontWeight weight = FontWeight.w600}) =>
+      GoogleFonts.rubik(
+        fontSize: size,
+        fontWeight: weight,
+        height: 1.35,
+        color: color ?? LobbyColors.cream,
+      );
+
+  static TextStyle bodyMuted({double size = 15}) =>
+      body(size: size, color: LobbyColors.textMuted, weight: FontWeight.w600);
+
+  /// Previous body font (Nunito) — used on Pick-your-rummy cards.
+  static TextStyle legacyBody({double size = 16, Color? color, FontWeight weight = FontWeight.w600}) =>
       GoogleFonts.nunito(
         fontSize: size,
         fontWeight: weight,
@@ -134,7 +161,14 @@ class LobbyText {
         color: color ?? LobbyColors.cream,
       );
 
-  static TextStyle bodyMuted({double size = 13}) => body(size: size, color: LobbyColors.creamMuted, weight: FontWeight.w600);
+  /// Previous label font (Nunito) — used on Pick-your-rummy cards.
+  static TextStyle legacyLabel({double size = 14, Color? color, FontWeight weight = FontWeight.w700}) =>
+      GoogleFonts.nunito(
+        fontSize: size,
+        fontWeight: weight,
+        letterSpacing: 1.4,
+        color: color ?? LobbyColors.gold,
+      );
 }
 
 /// Soft felt-panel used across lobby sections.
@@ -170,7 +204,7 @@ class LobbyPanel extends StatelessWidget {
                 LobbyColors.ink.withValues(alpha: 0.78),
               ],
             ),
-        border: Border.all(color: borderColor ?? LobbyColors.feltBright.withValues(alpha: 0.35), width: 1.4),
+        border: Border.all(color: borderColor ?? LobbyColors.gold.withValues(alpha: 0.4), width: 1.4),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.25),
@@ -202,14 +236,14 @@ class LobbySectionTitle extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (eyebrow != null) ...[
-          Text(eyebrow!.toUpperCase(), style: LobbyText.label(size: 11)),
+          Text(eyebrow!.toUpperCase(), style: LobbyText.label(size: 13)),
           const SizedBox(height: 2),
         ],
         Row(
           children: [
             Text(title, style: LobbyText.section()),
             const SizedBox(width: 8),
-            Text('♠ ♥', style: LobbyText.body(size: 14, color: LobbyColors.brandGreen.withValues(alpha: 0.9))),
+            Text('♠ ♥', style: LobbyText.body(size: 16, color: LobbyColors.gold.withValues(alpha: 0.9))),
           ],
         ),
         Container(
@@ -218,7 +252,7 @@ class LobbySectionTitle extends StatelessWidget {
           width: 48,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(99),
-            gradient: const LinearGradient(colors: [LobbyColors.brandGreen, LobbyColors.chipYellow]),
+            gradient: const LinearGradient(colors: [LobbyColors.gold, Color(0xFFFFF1A8)]),
           ),
         ),
         if (subtitle != null) ...[
