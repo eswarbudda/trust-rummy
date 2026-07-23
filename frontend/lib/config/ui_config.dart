@@ -37,7 +37,7 @@ class UiConfig {
   /// Dark scrim over the lobby image so cards/CTAs stay readable (0–100).
   static const int lobbyScrimPercent = int.fromEnvironment(
     'LOBBY_SCRIM_PERCENT',
-    defaultValue: 42,
+    defaultValue: 28,
   );
 
   // ---- Game board ----

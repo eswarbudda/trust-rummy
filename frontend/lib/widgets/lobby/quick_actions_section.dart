@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../theme/lobby_theme.dart';
 
+/// Quick actions as oversized maroon poker chips.
 class QuickActionsSection extends StatelessWidget {
   const QuickActionsSection({
     super.key,
@@ -12,63 +15,63 @@ class QuickActionsSection extends StatelessWidget {
   final VoidCallback onCreateTable;
   final VoidCallback onJoinWithCode;
 
+  static const _chipSize = 138.0;
+  static const _chipColors = [LobbyColors.chipMaroon, LobbyColors.chipMaroonDeep];
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const LobbySectionTitle('Quick actions', eyebrow: 'Deal me in'),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 560;
-            final children = [
-              const _ActionCard(
+            final wide = constraints.maxWidth >= 520;
+            final chips = [
+              const PokerChipAction(
+                label: 'Quick\nJoin',
+                subtitle: 'Soon',
+                colors: _chipColors,
+                rimColor: LobbyColors.cream,
                 icon: Icons.flash_on_rounded,
-                label: 'Quick Join',
-                subtitle: 'Matchmaking soon',
-                emoji: '⚡',
-                colors: [LobbyColors.feltBright, LobbyColors.felt],
-                borderColor: LobbyColors.chipYellow,
-                borderWidth: 2.5,
+                size: _chipSize,
                 onPressed: null,
                 tooltip: 'Coming soon — matchmaking API not available yet',
               ),
-              _ActionCard(
-                icon: Icons.add_circle_rounded,
-                label: 'Create Table',
-                subtitle: 'You host the deal',
-                emoji: '🃏',
-                colors: const [LobbyColors.chipYellow, LobbyColors.jokerOrange],
-                foreground: LobbyColors.ink,
+              PokerChipAction(
+                label: 'Create\nTable',
+                subtitle: 'Host',
+                colors: _chipColors,
+                rimColor: LobbyColors.cream,
+                icon: Icons.add_rounded,
+                size: _chipSize,
                 onPressed: onCreateTable,
               ),
-              _ActionCard(
-                icon: Icons.login_rounded,
-                label: 'Join with Code',
-                subtitle: '6-letter room code',
-                emoji: '🔑',
-                colors: const [LobbyColors.openBlue, LobbyColors.feltBright],
+              PokerChipAction(
+                label: 'Join\nCode',
+                subtitle: '6-char',
+                colors: _chipColors,
+                rimColor: LobbyColors.cream,
+                icon: Icons.vpn_key_rounded,
+                size: _chipSize,
                 onPressed: onJoinWithCode,
               ),
             ];
+
             if (wide) {
               return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  for (var i = 0; i < children.length; i++) ...[
-                    if (i > 0) const SizedBox(width: 12),
-                    Expanded(child: children[i]),
-                  ],
+                  for (final c in chips) Expanded(child: Center(child: c)),
                 ],
               );
             }
-            return Column(
-              children: [
-                for (var i = 0; i < children.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 10),
-                  children[i],
-                ],
-              ],
+            return Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 14,
+              runSpacing: 14,
+              children: chips,
             );
           },
         ),
@@ -77,102 +80,117 @@ class QuickActionsSection extends StatelessWidget {
   }
 }
 
-class _ActionCard extends StatelessWidget {
-  const _ActionCard({
-    required this.icon,
+class PokerChipAction extends StatelessWidget {
+  const PokerChipAction({
+    super.key,
     required this.label,
     required this.subtitle,
-    required this.emoji,
     required this.colors,
+    required this.rimColor,
+    required this.icon,
     required this.onPressed,
     this.foreground = LobbyColors.cream,
-    this.borderColor,
-    this.borderWidth = 1.5,
     this.tooltip,
+    this.size = 138,
   });
 
-  final IconData icon;
   final String label;
   final String subtitle;
-  final String emoji;
   final List<Color> colors;
+  final Color rimColor;
   final Color foreground;
-  final Color? borderColor;
-  final double borderWidth;
+  final IconData icon;
   final VoidCallback? onPressed;
   final String? tooltip;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
-    // Keep "coming soon" tiles vivid (e.g. Quick Join green) instead of greyed out.
-    final showVividWhenDisabled = borderColor != null;
-    final fill = enabled || showVividWhenDisabled
-        ? colors
-        : colors.map((c) => c.withValues(alpha: 0.45)).toList();
-    final fgAlpha = enabled || showVividWhenDisabled ? 1.0 : 0.55;
-
-    final card = Material(
+    final chip = Material(
       color: Colors.transparent,
+      shape: const CircleBorder(),
       child: InkWell(
+        customBorder: const CircleBorder(),
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(22),
         child: Ink(
+          width: size,
+          height: size,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
+            shape: BoxShape.circle,
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: fill,
+              colors: colors,
             ),
-            border: Border.all(
-              color: borderColor ?? Colors.white.withValues(alpha: enabled ? 0.18 : 0.08),
-              width: borderWidth,
-            ),
+            border: Border.all(color: rimColor, width: 4.5),
             boxShadow: [
               BoxShadow(
-                color: (borderColor ?? colors.first).withValues(alpha: 0.4),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
+                color: colors.first.withValues(alpha: 0.5),
+                blurRadius: 16,
+                offset: const Offset(0, 7),
               ),
             ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(icon, color: foreground.withValues(alpha: fgAlpha), size: 26),
-                    const Spacer(),
-                    Text(emoji, style: TextStyle(fontSize: 20, color: foreground.withValues(alpha: fgAlpha))),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  label,
-                  style: LobbyText.body(
-                    size: 16,
-                    weight: FontWeight.w800,
-                    color: foreground.withValues(alpha: enabled || showVividWhenDisabled ? 1 : 0.65),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CustomPaint(
+                size: Size(size * 0.78, size * 0.78),
+                painter: _ChipRingPainter(color: rimColor.withValues(alpha: 0.55)),
+              ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: foreground.withValues(alpha: enabled ? 1 : 0.92), size: 30),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: LobbyText.body(
+                      size: 14,
+                      weight: FontWeight.w800,
+                      color: foreground,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: LobbyText.body(
-                    size: 12,
-                    color: foreground.withValues(alpha: enabled || showVividWhenDisabled ? 0.85 : 0.45),
+                  Text(
+                    subtitle,
+                    style: LobbyText.body(
+                      size: 11,
+                      color: foreground.withValues(alpha: 0.85),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
-    if (tooltip == null) return card;
-    return Tooltip(message: tooltip!, child: card);
+    if (tooltip == null) return chip;
+    return Tooltip(message: tooltip!, child: chip);
   }
+}
+
+class _ChipRingPainter extends CustomPainter {
+  _ChipRingPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final rect = Offset.zero & size;
+    const dashCount = 16;
+    const sweep = (2 * math.pi) / dashCount;
+    for (var i = 0; i < dashCount; i++) {
+      canvas.drawArc(rect, i * sweep, sweep * 0.45, false, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChipRingPainter oldDelegate) => oldDelegate.color != color;
 }

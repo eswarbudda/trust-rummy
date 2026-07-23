@@ -17,6 +17,22 @@ class LobbyColors {
   static const Color openBlue = Color(0xFF3DBBFF);
   static const Color jokerOrange = Color(0xFFFF8A3D);
   static const Color wildPink = Color(0xFFFF5CA8);
+  static const Color chipMaroon = Color(0xFF8B1A3A);
+  static const Color chipMaroonDeep = Color(0xFF5C0F26);
+  static const Color suitRed = Color(0xFFD32F2F);
+  static const Color suitBlack = Color(0xFF1A1A1A);
+  /// Hero title ("Hit the tables")
+  static const Color heroTitle = Color(0xFFFFD84D);
+  /// Brand / accent green — same as "TRUST RUMMY" label
+  static const Color brandGreen = feltBright;
+  /// Dark green fill for Pick-your-rummy game-mode cards
+  static const Color gameCardGreen = Color(0xFF0D3D2C);
+  /// Section titles ("Quick actions", "Pick your rummy", …)
+  static const Color sectionTitle = brandGreen;
+  /// Rule blurbs on game-mode cards (warm gold on dark green)
+  static const Color gameRuleText = Color(0xFFFFE08A);
+  /// Primary label text on dark green game cards
+  static const Color gameCardLabel = Color(0xFFFFF8EE);
 
   // Aliases used by existing widgets
   static const Color gold = chipYellow;
@@ -24,6 +40,9 @@ class LobbyColors {
   static const Color teal = openBlue;
   static const Color coral = cardRed;
   static const Color sapphire = openBlue;
+  static const Color plum = chipMaroon;
+  static const Color chipPurple = chipMaroon;
+  static const Color chipPurpleDeep = chipMaroonDeep;
 
   static const LinearGradient pageFallback = LinearGradient(
     begin: Alignment.topLeft,
@@ -35,10 +54,16 @@ class LobbyColors {
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [
-      Color(0x5522C57A),
-      Color(0x44148F5A),
-      Color(0x66E63946),
+      Color(0x2222C57A),
+      Color(0x18148F5A),
+      Color(0x332A1014),
     ],
+  );
+
+  static const LinearGradient quickActionMaroon = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [chipMaroon, chipMaroonDeep],
   );
 
   static Color accentForVariant(String value) {
@@ -70,6 +95,9 @@ class LobbyColors {
         return '★';
     }
   }
+
+  /// Suit symbols for game-mode tiles — shared maroon.
+  static Color suitColorForVariant(String value) => chipMaroon;
 }
 
 class LobbyText {
@@ -80,14 +108,14 @@ class LobbyText {
         fontWeight: FontWeight.w700,
         letterSpacing: 0.2,
         height: 1.05,
-        color: color ?? LobbyColors.cream,
+        color: color ?? LobbyColors.heroTitle,
       );
 
   static TextStyle section({double size = 22, Color? color}) => GoogleFonts.fredoka(
         fontSize: size,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.1,
-        color: color ?? LobbyColors.cream,
+        color: color ?? LobbyColors.sectionTitle,
       );
 
   static TextStyle label({double size = 12, Color? color, FontWeight weight = FontWeight.w700}) =>
@@ -181,7 +209,7 @@ class LobbySectionTitle extends StatelessWidget {
           children: [
             Text(title, style: LobbyText.section()),
             const SizedBox(width: 8),
-            Text('♠ ♥', style: LobbyText.body(size: 14, color: LobbyColors.cardRed.withValues(alpha: 0.85))),
+            Text('♠ ♥', style: LobbyText.body(size: 14, color: LobbyColors.brandGreen.withValues(alpha: 0.9))),
           ],
         ),
         Container(
@@ -190,7 +218,7 @@ class LobbySectionTitle extends StatelessWidget {
           width: 48,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(99),
-            gradient: const LinearGradient(colors: [LobbyColors.chipYellow, LobbyColors.feltBright, LobbyColors.cardRed]),
+            gradient: const LinearGradient(colors: [LobbyColors.brandGreen, LobbyColors.chipYellow]),
           ),
         ),
         if (subtitle != null) ...[

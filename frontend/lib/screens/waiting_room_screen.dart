@@ -272,7 +272,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                   children: [
                     Text(
                       LobbyVariants.labelFor(room?.gameVariant),
-                      style: LobbyText.brand(size: 30),
+                      style: LobbyText.brand(size: 30, color: LobbyColors.cream),
                     ),
                     const SizedBox(height: 8),
                     Text(

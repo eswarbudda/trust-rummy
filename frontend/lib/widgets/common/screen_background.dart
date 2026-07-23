@@ -20,7 +20,7 @@ class ScreenBackground extends StatelessWidget {
     this.alignment = Alignment.center,
   });
 
-  /// Lobby preset from [UiConfig].
+  /// Soften crop toward the left so most of the hostess body stays in frame.
   factory ScreenBackground.lobby({Key? key, required Widget child}) {
     return ScreenBackground(
       key: key,
@@ -30,6 +30,7 @@ class ScreenBackground extends StatelessWidget {
       scrimOpacity: UiConfig.lobbyScrimOpacity,
       fallback: const BoxDecoration(gradient: LobbyColors.pageFallback),
       brandTint: LobbyColors.brandTint,
+      alignment: const Alignment(-0.7, 0.15),
       child: child,
     );
   }
