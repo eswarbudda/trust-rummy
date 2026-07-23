@@ -78,6 +78,22 @@ class ApiConfig {
 
   static Uri get scorecardUri => Uri.parse('$httpBaseUrl/api/v1/history/scorecard');
 
+  // ---- Notifications (/api/v1/notifications) ----
+
+  static Uri notificationsUri({String? status, int page = 0, int size = 20}) {
+    final statusQuery = status == null || status.isEmpty ? '' : '&status=$status';
+    return Uri.parse('$httpBaseUrl/api/v1/notifications?page=$page&size=$size$statusQuery');
+  }
+
+  static Uri get notificationsUnreadCountUri =>
+      Uri.parse('$httpBaseUrl/api/v1/notifications/unread-count');
+
+  static Uri notificationReadUri(String id) =>
+      Uri.parse('$httpBaseUrl/api/v1/notifications/$id/read');
+
+  static Uri get notificationsReadAllUri =>
+      Uri.parse('$httpBaseUrl/api/v1/notifications/read-all');
+
   /// Gameplay WebSocket for a specific room, per `RULES_ENGINE.md` section 9.
   static Uri gameWsUri(String roomCode, String token) =>
       Uri.parse('$wsBaseUrl/ws/game/$roomCode?token=$token');

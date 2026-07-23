@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/ui_config.dart';
 import '../../lobby/lobby_controller.dart';
+import '../../services/user_presence_service.dart';
 import '../../theme/lobby_theme.dart';
 
 class LobbyHeader extends StatelessWidget {
@@ -50,6 +51,8 @@ class LobbyHeader extends StatelessWidget {
               ),
               icon: const Icon(Icons.settings_rounded),
             ),
+            const SizedBox(width: 8),
+            const _NotificationBadgeButton(),
           ],
         ),
         const SizedBox(height: 16),
@@ -134,6 +137,44 @@ class WalletBalanceCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _NotificationBadgeButton extends StatelessWidget {
+  const _NotificationBadgeButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: UserPresenceService.instance,
+      builder: (context, _) {
+        final unread = UserPresenceService.instance.unreadCount;
+        return IconButton(
+          tooltip: unread > 0 ? '$unread unread' : 'Notifications',
+          onPressed: () async {
+            await UserPresenceService.instance.markAllRead();
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  unread > 0 ? 'Marked $unread notification(s) read' : 'No unread notifications',
+                ),
+              ),
+            );
+          },
+          style: IconButton.styleFrom(
+            backgroundColor: LobbyColors.inkSoft.withValues(alpha: 0.8),
+            foregroundColor: LobbyColors.cream,
+            side: BorderSide(color: LobbyColors.sectionTitle.withValues(alpha: 0.45)),
+          ),
+          icon: Badge(
+            isLabelVisible: unread > 0,
+            label: Text(unread > 9 ? '9+' : '$unread'),
+            child: const Icon(Icons.notifications_rounded),
+          ),
+        );
+      },
     );
   }
 }

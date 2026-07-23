@@ -26,6 +26,7 @@ public class UserWebSocketHandler extends TextWebSocketHandler {
     private static final String USER_ID_ATTR = "userId";
 
     private final PresenceService presenceService;
+    private final UserSessionRegistry userSessionRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -38,6 +39,7 @@ public class UserWebSocketHandler extends TextWebSocketHandler {
         }
 
         presenceService.onConnect(userId, session.getId());
+        userSessionRegistry.register(userId, session.getId(), session);
         String username = String.valueOf(session.getAttributes().getOrDefault("username", ""));
         log.info("User socket connected: user={} userId={} session={}", username, userId, session.getId());
 
@@ -86,6 +88,7 @@ public class UserWebSocketHandler extends TextWebSocketHandler {
         Long userId = resolveUserId(session);
         if (userId != null) {
             presenceService.onDisconnect(userId, session.getId());
+            userSessionRegistry.unregister(userId, session.getId());
             log.info("User socket closed: userId={} session={} status={}", userId, session.getId(), status);
         }
     }

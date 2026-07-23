@@ -6,12 +6,10 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/api_config.dart';
 import 'auth_session_service.dart';
+import 'notification_api_service.dart';
 import 'websocket_service.dart';
 
-/// Client for `/ws/user` — registers presence with the backend while signed in.
-///
-/// Future notification delivery will reuse this socket; MVP only heartbeats
-/// and tracks connection state.
+/// Client for `/ws/user` — presence + realtime notification frames.
 class UserPresenceService extends ChangeNotifier {
   UserPresenceService._();
 
@@ -20,13 +18,18 @@ class UserPresenceService extends ChangeNotifier {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   Timer? _heartbeatTimer;
+  final NotificationApiService _notifications = NotificationApiService();
 
   SocketConnectionState _state = SocketConnectionState.disconnected;
   String? _lastStatus;
+  int _unreadCount = 0;
+  Map<String, dynamic>? _lastNotification;
 
   SocketConnectionState get state => _state;
   String? get lastStatus => _lastStatus;
   bool get isConnected => _state == SocketConnectionState.connected;
+  int get unreadCount => _unreadCount;
+  Map<String, dynamic>? get lastNotification => _lastNotification;
 
   /// Connect when a session exists; no-op if already connected.
   Future<void> ensureConnected() async {
@@ -59,6 +62,7 @@ class UserPresenceService extends ChangeNotifier {
       );
       _setState(SocketConnectionState.connected);
       _startHeartbeat();
+      unawaited(refreshUnreadCount());
     } catch (_) {
       _setState(SocketConnectionState.error);
     }
@@ -75,8 +79,29 @@ class UserPresenceService extends ChangeNotifier {
     }
     _channel = null;
     _lastStatus = null;
+    _lastNotification = null;
+    _unreadCount = 0;
     if (_state != SocketConnectionState.disconnected) {
       _setState(SocketConnectionState.disconnected);
+    }
+  }
+
+  Future<void> refreshUnreadCount() async {
+    if (!AuthSessionService.instance.isSignedIn) return;
+    try {
+      _unreadCount = await _notifications.unreadCount();
+      notifyListeners();
+    } catch (_) {
+      // ignore transient failures
+    }
+  }
+
+  Future<void> markAllRead() async {
+    try {
+      _unreadCount = await _notifications.markAllRead();
+      notifyListeners();
+    } catch (_) {
+      // ignore
     }
   }
 
@@ -86,6 +111,16 @@ class UserPresenceService extends ChangeNotifier {
       final type = map['type'] as String?;
       if (type == 'PRESENCE' || type == 'HEARTBEAT_ACK') {
         _lastStatus = map['status'] as String?;
+        notifyListeners();
+        return;
+      }
+      if (type == 'NOTIFICATION') {
+        _lastNotification = map;
+        notifyListeners();
+        return;
+      }
+      if (type == 'NOTIFICATION_COUNT') {
+        _unreadCount = (map['unreadCount'] as num?)?.toInt() ?? _unreadCount;
         notifyListeners();
       }
     } catch (_) {
