@@ -1,5 +1,6 @@
 package com.trustrummy.backend.config;
 
+import com.trustrummy.backend.presence.UserWebSocketHandler;
 import com.trustrummy.backend.repository.UserRepository;
 import com.trustrummy.backend.security.JwtHandshakeInterceptor;
 import com.trustrummy.backend.security.JwtTokenUtil;
@@ -35,6 +36,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private final JwtTokenUtil jwtTokenUtil;
     private final UserRepository userRepository;
     private final GameWebSocketHandler gameWebSocketHandler;
+    private final UserWebSocketHandler userWebSocketHandler;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
@@ -47,6 +49,11 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .addHandler(gameWebSocketHandler, "/ws/game/{roomCode}")
                 .addInterceptors(jwtHandshakeInterceptor());
         applyDevCors(gameRegistration);
+
+        WebSocketHandlerRegistration userRegistration = registry
+                .addHandler(userWebSocketHandler, "/ws/user")
+                .addInterceptors(jwtHandshakeInterceptor());
+        applyDevCors(userRegistration);
     }
 
     // Rule 3 (WebSocket variant): only allow explicit localhost/dev origins (any port) used by the REST CORS policy.

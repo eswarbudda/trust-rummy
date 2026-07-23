@@ -1,15 +1,15 @@
-// Basic smoke test: the app boots and lands on the dev-tools launcher screen.
+// Basic smoke test: unsigned-in app boots to the login gate.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:trust_rummy_app/main.dart';
 
 void main() {
-  testWidgets('App boots to the dev-tools home screen', (WidgetTester tester) async {
+  testWidgets('App boots to the login screen when signed out', (WidgetTester tester) async {
     await tester.pumpWidget(const TrustRummyApp());
+    await tester.pumpAndSettle();
 
-    expect(find.text('Trust Rummy — Dev Tools'), findsOneWidget);
-    expect(find.byIcon(Icons.videogame_asset), findsOneWidget);
+    expect(find.text('Trust Rummy'), findsWidgets);
+    expect(find.text('Sign in'), findsOneWidget);
   });
 }

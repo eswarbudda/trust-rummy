@@ -21,6 +21,12 @@ class ApiConfig {
   static Uri telemetryWsUri(String token) =>
       Uri.parse('$wsBaseUrl$telemetryWsPath?token=$token');
 
+  /// Authenticated user channel for presence (+ future notifications).
+  static String get userWsPath => '/ws/user';
+
+  static Uri userWsUri(String token) =>
+      Uri.parse('$wsBaseUrl$userWsPath?token=$token');
+
   // ---- Auth & onboarding (/api/v1/auth) ----
 
   static Uri get registerUri => Uri.parse('$httpBaseUrl/api/v1/auth/register');
