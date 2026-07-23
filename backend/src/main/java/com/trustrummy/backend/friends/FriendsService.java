@@ -1,15 +1,15 @@
 package com.trustrummy.backend.friends;
 
+import com.trustrummy.backend.exception.ForbiddenOperationException;
+import com.trustrummy.backend.exception.ResourceNotFoundException;
 import com.trustrummy.backend.notifications.NotificationPort;
 import com.trustrummy.backend.notifications.NotificationTypes;
 import com.trustrummy.backend.presence.PresenceService;
 import com.trustrummy.backend.users.UserLookupPort;
 import com.trustrummy.backend.users.UserSummary;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,14 +34,6 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
             return false;
         }
         return friendshipRepository.areFriends(userId, otherUserId);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public void requireFriends(long userId, long otherUserId) {
-        if (!areFriends(userId, otherUserId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Users are not friends");
-        }
     }
 
     @Transactional(readOnly = true)
@@ -109,7 +101,7 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
     @Transactional
     public FriendshipView sendRequestByUsername(long requesterId, String username) {
         UserSummary target = userLookupPort.findByUsername(username)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return sendRequestByUserId(requesterId, target.id());
     }
 
@@ -117,12 +109,12 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
     @Transactional
     public FriendshipView sendRequestByUserId(long requesterId, long addresseeId) {
         if (requesterId == addresseeId) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot friend yourself");
+            throw new IllegalArgumentException("Cannot friend yourself");
         }
         UserSummary addressee = userLookupPort.findById(addresseeId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         UserSummary requester = userLookupPort.findById(requesterId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         FriendshipEntity existing = friendshipRepository.findPair(requesterId, addresseeId).orElse(null);
         FriendshipEntity saved;
@@ -135,9 +127,9 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
             saved = friendshipRepository.save(created);
         } else {
             switch (existing.getStatus()) {
-                case PENDING -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Friend request already pending");
-                case ACCEPTED -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Already friends");
-                case BLOCKED -> throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot send friend request");
+                case PENDING -> throw new IllegalStateException("Friend request already pending");
+                case ACCEPTED -> throw new IllegalStateException("Already friends");
+                case BLOCKED -> throw new ForbiddenOperationException("Cannot send friend request");
                 case DECLINED, REMOVED -> {
                     existing.setRequesterId(requesterId);
                     existing.setAddresseeId(addresseeId);
@@ -145,7 +137,7 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
                     existing.setRespondedAt(null);
                     saved = friendshipRepository.save(existing);
                 }
-                default -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Invalid friendship state");
+                default -> throw new IllegalStateException("Invalid friendship state");
             }
         }
 
@@ -160,7 +152,8 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
         friendship.setRespondedAt(Instant.now());
         FriendshipEntity saved = friendshipRepository.save(friendship);
 
-        UserSummary accepter = userLookupPort.findById(userId).orElseThrow();
+        UserSummary accepter = userLookupPort.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         notificationPort.create(
                 saved.getRequesterId(),
                 NotificationTypes.FRIEND_ACCEPTED,
@@ -184,9 +177,9 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
     @Transactional
     public FriendshipView unfriend(long userId, long otherUserId) {
         FriendshipEntity friendship = friendshipRepository.findPair(userId, otherUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friendship not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Friendship not found"));
         if (friendship.getStatus() != FriendshipStatus.ACCEPTED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Not currently friends");
+            throw new IllegalStateException("Not currently friends");
         }
         friendship.setStatus(FriendshipStatus.REMOVED);
         friendship.setRespondedAt(Instant.now());
@@ -196,10 +189,10 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
     @Transactional
     public FriendshipView block(long userId, long otherUserId) {
         if (userId == otherUserId) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot block yourself");
+            throw new IllegalArgumentException("Cannot block yourself");
         }
         userLookupPort.findById(otherUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         FriendshipEntity existing = friendshipRepository.findPair(userId, otherUserId).orElse(null);
         FriendshipEntity saved;
@@ -220,15 +213,15 @@ public class FriendsService implements FriendPort, FriendsCommandPort {
 
     private FriendshipEntity requireOwnedPending(long userId, long friendshipId, boolean addresseeOnly) {
         FriendshipEntity friendship = friendshipRepository.findById(friendshipId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Friend request not found"));
         if (friendship.getStatus() != FriendshipStatus.PENDING) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Friend request is not pending");
+            throw new IllegalStateException("Friend request is not pending");
         }
         if (addresseeOnly && !friendship.getAddresseeId().equals(userId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the addressee can respond");
+            throw new ForbiddenOperationException("Only the addressee can respond");
         }
         if (!friendship.getRequesterId().equals(userId) && !friendship.getAddresseeId().equals(userId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant");
+            throw new ForbiddenOperationException("Not a participant");
         }
         return friendship;
     }

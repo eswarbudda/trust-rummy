@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -12,8 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-
-import static org.springframework.http.HttpStatus.BAD_REQUEST;
 
 @Service
 @RequiredArgsConstructor
@@ -26,7 +23,7 @@ public class NotificationService implements NotificationPort {
     @Transactional
     public NotificationView create(long userId, String type, Map<String, Object> payload, String dedupeKey) {
         if (type == null || type.isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "Notification type is required");
+            throw new IllegalArgumentException("Notification type is required");
         }
         String normalizedDedupe = (dedupeKey == null || dedupeKey.isBlank()) ? null : dedupeKey.trim();
         if (normalizedDedupe != null) {

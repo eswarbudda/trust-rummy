@@ -1,5 +1,6 @@
 package com.trustrummy.backend.friends;
 
+import com.trustrummy.backend.exception.ForbiddenOperationException;
 import com.trustrummy.backend.notifications.NotificationPort;
 import com.trustrummy.backend.notifications.NotificationTypes;
 import com.trustrummy.backend.notifications.NotificationView;
@@ -12,7 +13,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
@@ -70,6 +70,7 @@ class FriendsServiceTest {
 
         assertThat(view.friendshipId()).isEqualTo(10L);
         assertThat(view.status()).isEqualTo(FriendshipStatus.PENDING);
+        @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
         verify(notificationPort).create(
                 eq(2L),
@@ -84,7 +85,7 @@ class FriendsServiceTest {
     @Test
     void sendRequestRejectsSelf() {
         assertThatThrownBy(() -> service.sendRequestByUserId(1L, 1L))
-                .isInstanceOf(ResponseStatusException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Cannot friend yourself");
         verify(notificationPort, never()).create(anyLong(), anyString(), anyMap(), anyString());
     }
@@ -129,7 +130,7 @@ class FriendsServiceTest {
         when(friendshipRepository.findById(10L)).thenReturn(Optional.of(pending));
 
         assertThatThrownBy(() -> service.accept(1L, 10L))
-                .isInstanceOf(ResponseStatusException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("addressee");
     }
 
@@ -161,14 +162,6 @@ class FriendsServiceTest {
     void areFriendsDelegatesToRepository() {
         when(friendshipRepository.areFriends(1L, 2L)).thenReturn(true);
         assertThat(service.areFriends(1L, 2L)).isTrue();
-        service.requireFriends(1L, 2L);
-    }
-
-    @Test
-    void requireFriendsThrowsWhenNotFriends() {
-        when(friendshipRepository.areFriends(1L, 2L)).thenReturn(false);
-        assertThatThrownBy(() -> service.requireFriends(1L, 2L))
-                .isInstanceOf(ResponseStatusException.class);
     }
 
     @Test
