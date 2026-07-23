@@ -111,6 +111,14 @@ class ApiConfig {
   static Uri friendBlockUri(int userId) =>
       Uri.parse('$httpBaseUrl/api/v1/friends/$userId/block');
 
+  // ---- Recent players (/api/v1/recent-players) ----
+
+  static Uri recentPlayersUri({int limit = 30}) =>
+      Uri.parse('$httpBaseUrl/api/v1/recent-players?limit=$limit');
+
+  static Uri recentPlayerFriendRequestUri(int userId) =>
+      Uri.parse('$httpBaseUrl/api/v1/recent-players/$userId/friend-request');
+
   /// Gameplay WebSocket for a specific room, per `RULES_ENGINE.md` section 9.
   static Uri gameWsUri(String roomCode, String token) =>
       Uri.parse('$wsBaseUrl/ws/game/$roomCode?token=$token');

@@ -5,6 +5,7 @@ import com.trustrummy.backend.entity.GameSession;
 import com.trustrummy.backend.entity.MoveType;
 import com.trustrummy.backend.entity.RoomStatus;
 import com.trustrummy.backend.entity.SessionStatus;
+import com.trustrummy.backend.recentplayers.RecentPlayersPort;
 import com.trustrummy.backend.repository.GameMoveLogRepository;
 import com.trustrummy.backend.repository.GameRoomRepository;
 import com.trustrummy.backend.repository.GameSessionRepository;
@@ -39,6 +40,7 @@ public class GamePersistenceService {
     private final GameMoveLogRepository gameMoveLogRepository;
     private final RoomPlayerRepository roomPlayerRepository;
     private final UserRepository userRepository;
+    private final RecentPlayersPort recentPlayersPort;
 
     @Async("gamePersistenceExecutor")
     @Transactional
@@ -99,6 +101,15 @@ public class GamePersistenceService {
                     userRepository.findById(winnerUserId).ifPresent(session::setWinner);
                 }
                 gameSessionRepository.save(session);
+
+                if (session.getStatus() == SessionStatus.COMPLETED) {
+                    recentPlayersPort.recordEncounters(
+                            finalScores.keySet(),
+                            room.getId(),
+                            room.getRoomCode(),
+                            session.getEndedAt()
+                    );
+                }
             });
 
             finalScores.forEach((userId, score) ->

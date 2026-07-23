@@ -15,6 +15,7 @@ import '../widgets/common/screen_background.dart';
 import '../theme/lobby_theme.dart';
 import 'friends_screen.dart';
 import 'home_screen.dart';
+import 'recent_players_screen.dart';
 import 'waiting_room_screen.dart';
 
 class LobbyScreen extends StatefulWidget {
@@ -196,6 +197,13 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                         Navigator.of(context).push(
                                           MaterialPageRoute<void>(
                                             builder: (_) => const FriendsScreen(),
+                                          ),
+                                        );
+                                      },
+                                      onRecentPlayers: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => const RecentPlayersScreen(),
                                           ),
                                         );
                                       },
