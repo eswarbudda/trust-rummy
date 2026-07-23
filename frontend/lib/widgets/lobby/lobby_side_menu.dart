@@ -10,6 +10,7 @@ class LobbySideMenu extends StatelessWidget {
     required this.onJoinWithCode,
     this.onFriends,
     this.onRecentPlayers,
+    this.onPlayGroups,
     this.compact = false,
   });
 
@@ -17,6 +18,7 @@ class LobbySideMenu extends StatelessWidget {
   final VoidCallback onJoinWithCode;
   final VoidCallback? onFriends;
   final VoidCallback? onRecentPlayers;
+  final VoidCallback? onPlayGroups;
   final bool compact;
 
   static const double wideWidth = 212;
@@ -55,6 +57,12 @@ class LobbySideMenu extends StatelessWidget {
         label: 'Recent',
         subtitle: 'Players',
         onTap: onRecentPlayers,
+      ),
+      _MenuItem(
+        icon: Icons.groups_rounded,
+        label: 'Groups',
+        subtitle: 'Play',
+        onTap: onPlayGroups,
       ),
     ];
 
