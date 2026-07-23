@@ -12,6 +12,7 @@ import '../widgets/lobby/quick_actions_section.dart';
 import '../widgets/lobby/recent_games_section.dart';
 import '../widgets/lobby/resume_match_section.dart';
 import '../widgets/common/screen_background.dart';
+import '../theme/lobby_theme.dart';
 import 'home_screen.dart';
 import 'waiting_room_screen.dart';
 
@@ -151,6 +152,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
               body: ScreenBackground.lobby(
                 child: SafeArea(
                   child: RefreshIndicator(
+                    color: LobbyColors.gold,
+                    backgroundColor: LobbyColors.inkSoft,
                     onRefresh: _controller.load,
                     child: Center(
                       child: ConstrainedBox(
@@ -159,26 +162,31 @@ class _LobbyScreenState extends State<LobbyScreen> {
                           physics: const AlwaysScrollableScrollPhysics(),
                           slivers: [
                             SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
                               sliver: SliverList(
                                 delegate: SliverChildListDelegate([
                                   LobbyHeader(
                                     controller: _controller,
                                     onSettings: _openSettings,
                                   ),
-                                  const SizedBox(height: 24),
+                                  const SizedBox(height: 28),
                                   if (_controller.loading && _controller.profile == null)
                                     const Padding(
                                       padding: EdgeInsets.symmetric(vertical: 48),
-                                      child: Center(child: CircularProgressIndicator()),
+                                      child: Center(
+                                        child: CircularProgressIndicator(color: LobbyColors.gold),
+                                      ),
                                     )
                                   else ...[
                                     if (_controller.errorMessage != null) ...[
-                                      Text(
-                                        _controller.errorMessage!,
-                                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                      LobbyPanel(
+                                        borderColor: LobbyColors.coral.withValues(alpha: 0.5),
+                                        child: Text(
+                                          _controller.errorMessage!,
+                                          style: LobbyText.body(color: LobbyColors.coral),
+                                        ),
                                       ),
-                                      const SizedBox(height: 12),
+                                      const SizedBox(height: 14),
                                     ],
                                     QuickActionsSection(
                                       onCreateTable: () => _openCreate(),
@@ -204,6 +212,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                     RecentGamesSection(
                                       matches: _controller.recentMatches,
                                       myUsername: AuthSessionService.instance.username,
+                                      page: _controller.historyPage,
+                                      totalPages: _controller.historyTotalPages,
+                                      totalElements: _controller.historyTotalElements,
+                                      loading: _controller.historyLoading,
+                                      onPrev: _controller.historyHasPrev ? _controller.historyPrev : null,
+                                      onNext: _controller.historyHasNext ? _controller.historyNext : null,
                                     ),
                                   ],
                                 ]),

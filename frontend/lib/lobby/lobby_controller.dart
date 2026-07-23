@@ -32,6 +32,12 @@ class LobbyController extends ChangeNotifier {
   List<MatchHistoryItem> recentMatches = const [];
   ResumeMatchInfo? resumeMatch;
 
+  static const int historyPageSize = 5;
+  int historyPage = 0;
+  int historyTotalPages = 0;
+  int historyTotalElements = 0;
+  bool historyLoading = false;
+
   bool loading = false;
   String? errorMessage;
 
@@ -41,6 +47,9 @@ class LobbyController extends ChangeNotifier {
 
   double get walletBalance => profile?.walletBalance ?? 0;
 
+  bool get historyHasPrev => historyPage > 0;
+  bool get historyHasNext => historyTotalPages > 0 && historyPage < historyTotalPages - 1;
+
   Future<void> load() async {
     loading = true;
     errorMessage = null;
@@ -49,12 +58,16 @@ class LobbyController extends ChangeNotifier {
       await _session.ensureSignedIn();
       final profileFuture = _userApi.getProfile();
       final roomsFuture = _roomApi.listOpenRooms();
-      final historyFuture = _historyApi.listMyMatches(page: 0, size: 10);
+      final historyFuture = _historyApi.listMyMatches(page: 0, size: historyPageSize);
       final resumeFuture = _resolveResume();
 
       profile = await profileFuture;
       openRooms = await roomsFuture;
-      recentMatches = (await historyFuture).content;
+      final historyPageData = await historyFuture;
+      recentMatches = historyPageData.content;
+      historyPage = historyPageData.number;
+      historyTotalPages = historyPageData.totalPages;
+      historyTotalElements = historyPageData.totalElements;
       resumeMatch = await resumeFuture;
     } catch (e) {
       errorMessage = e.toString();
@@ -63,6 +76,32 @@ class LobbyController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> loadHistoryPage(int page) async {
+    if (page < 0) return;
+    if (historyTotalPages > 0 && page >= historyTotalPages) return;
+    if (historyLoading) return;
+
+    historyLoading = true;
+    notifyListeners();
+    try {
+      await _session.ensureSignedIn();
+      final data = await _historyApi.listMyMatches(page: page, size: historyPageSize);
+      recentMatches = data.content;
+      historyPage = data.number;
+      historyTotalPages = data.totalPages;
+      historyTotalElements = data.totalElements;
+    } catch (e) {
+      errorMessage = e.toString();
+    } finally {
+      historyLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> historyPrev() => loadHistoryPage(historyPage - 1);
+
+  Future<void> historyNext() => loadHistoryPage(historyPage + 1);
 
   Future<ResumeMatchInfo?> _resolveResume() async {
     final code = await _store.readLastRoomCode();
@@ -176,6 +215,9 @@ class LobbyController extends ChangeNotifier {
     profile = null;
     openRooms = const [];
     recentMatches = const [];
+    historyPage = 0;
+    historyTotalPages = 0;
+    historyTotalElements = 0;
     resumeMatch = null;
     notifyListeners();
   }

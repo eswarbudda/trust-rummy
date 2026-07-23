@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../config/ui_config.dart';
+import '../../theme/lobby_theme.dart';
 import '../../theme/rummy_colors.dart';
 
 /// Full-bleed background: optional asset/network image + scrim, with a
@@ -27,7 +28,8 @@ class ScreenBackground extends StatelessWidget {
       assetPath: UiConfig.lobbyBackgroundAsset,
       networkUrl: UiConfig.lobbyBackgroundUrl,
       scrimOpacity: UiConfig.lobbyScrimOpacity,
-      fallback: const BoxDecoration(color: Color(0xFF0F172A)),
+      fallback: const BoxDecoration(gradient: LobbyColors.pageFallback),
+      brandTint: LobbyColors.brandTint,
       child: child,
     );
   }

@@ -99,6 +99,9 @@ flutter run --dart-define=LOBBY_BG_URL=https://cdn.example.com/lobby.jpg \
 
 # Disable and use solid/gradient fallbacks:
 flutter run --dart-define=LOBBY_BG_ENABLED=false --dart-define=BOARD_BG_ENABLED=false
+
+# Currency symbol (default ₹):
+flutter run --dart-define=CURRENCY_SYMBOL=$
 ```
 
 ## Security model (Phase 1)

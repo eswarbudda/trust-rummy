@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../config/ui_config.dart';
 import '../../lobby/lobby_models.dart';
 import '../../services/room_api_service.dart';
+import '../../theme/lobby_theme.dart';
 
 /// Uses list payload only (no per-row getRoom). Seat counts are not available.
 class ActiveTablesSection extends StatelessWidget {
@@ -19,52 +21,68 @@ class ActiveTablesSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Active tables',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        const LobbySectionTitle(
+          'Open tables',
+          eyebrow: 'Lobby floor',
+          subtitle: 'WAITING rooms ready for one more seat.',
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Open WAITING rooms. Player counts are not included in the list API.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white54),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         if (rooms.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: const Text(
+          LobbyPanel(
+            borderColor: LobbyColors.teal.withValues(alpha: 0.3),
+            child: Text(
               'No open tables right now. Create one or join with a room code.',
-              style: TextStyle(color: Colors.white70),
+              style: LobbyText.bodyMuted(),
             ),
           )
         else
           ...rooms.map((room) {
             final waiting = room.status.toUpperCase() == 'WAITING';
+            final accent = LobbyColors.accentForVariant(room.gameVariant ?? '');
             return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Material(
-                color: Colors.black.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(12),
-                child: ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: Colors.white24),
-                  ),
-                  title: Text('${room.roomCode} · ${LobbyVariants.labelFor(room.gameVariant)}'),
-                  subtitle: Text(
-                    '${room.status}'
-                    '${room.maxPlayers != null ? ' · max ${room.maxPlayers}' : ''}'
-                    '${room.stakeAmount != null ? ' · stake ${room.stakeAmount}' : ''}',
-                  ),
-                  trailing: FilledButton(
-                    onPressed: waiting ? () => onJoin(room) : null,
-                    child: const Text('Join'),
-                  ),
+              padding: const EdgeInsets.only(bottom: 10),
+              child: LobbyPanel(
+                padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+                borderColor: accent.withValues(alpha: 0.4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: accent,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${room.roomCode} · ${LobbyVariants.labelFor(room.gameVariant)}',
+                            style: LobbyText.body(size: 14, weight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${room.status}'
+                            '${room.maxPlayers != null ? ' · max ${room.maxPlayers}' : ''}'
+                            '${room.stakeAmount != null ? ' · stake ${UiConfig.formatMoney(room.stakeAmount!)}' : ''}',
+                            style: LobbyText.bodyMuted(size: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    FilledButton(
+                      onPressed: waiting ? () => onJoin(room) : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: LobbyColors.ink,
+                        disabledBackgroundColor: Colors.white12,
+                      ),
+                      child: const Text('Join'),
+                    ),
+                  ],
                 ),
               ),
             );

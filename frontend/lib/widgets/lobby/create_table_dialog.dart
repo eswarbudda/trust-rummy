@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../config/ui_config.dart';
 import '../../lobby/lobby_models.dart';
 
 class CreateTableDialog extends StatefulWidget {
@@ -129,9 +130,10 @@ class _CreateTableDialogState extends State<CreateTableDialog> {
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                 ],
-                decoration: const InputDecoration(
-                  labelText: 'Entry fee (virtual credits)',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: 'Entry fee (${UiConfig.currencySymbol})',
+                  border: const OutlineInputBorder(),
+                  prefixText: '${UiConfig.currencySymbol} ',
                 ),
               ),
             ],

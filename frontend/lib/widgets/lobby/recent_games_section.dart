@@ -2,41 +2,59 @@ import 'package:flutter/material.dart';
 
 import '../../lobby/lobby_models.dart';
 import '../../services/match_history_api_service.dart';
+import '../../theme/lobby_theme.dart';
 
 class RecentGamesSection extends StatelessWidget {
   const RecentGamesSection({
     super.key,
     required this.matches,
     required this.myUsername,
+    required this.page,
+    required this.totalPages,
+    required this.totalElements,
+    required this.loading,
+    required this.onPrev,
+    required this.onNext,
   });
 
   final List<MatchHistoryItem> matches;
   final String? myUsername;
+  final int page;
+  final int totalPages;
+  final int totalElements;
+  final bool loading;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
+    final hasPager = totalPages > 1 || totalElements > matches.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Recent games',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
-        if (matches.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: const Text(
+        const LobbySectionTitle('Your recent hands', eyebrow: 'Scoreboard'),
+        const SizedBox(height: 14),
+        if (matches.isEmpty && !loading)
+          LobbyPanel(
+            borderColor: LobbyColors.sapphire.withValues(alpha: 0.3),
+            child: Text(
               'No matches yet. Play a game to see results here.',
-              style: TextStyle(color: Colors.white70),
+              style: LobbyText.bodyMuted(),
             ),
           )
-        else
+        else ...[
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4, color: LobbyColors.chipYellow),
+                ),
+              ),
+            ),
           ...matches.map((m) {
             final when = m.endedAt ?? m.startedAt;
             final dateLabel = when == null
@@ -46,22 +64,89 @@ class RecentGamesSection extends StatelessWidget {
             final result = m.status == 'ABORTED'
                 ? 'Aborted'
                 : (won ? 'Won' : (m.status == 'COMPLETED' ? 'Lost' : m.status));
+            final resultColor = m.status == 'ABORTED'
+                ? LobbyColors.creamMuted
+                : (won ? LobbyColors.emerald : LobbyColors.coral);
             return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Material(
-                color: Colors.black.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(12),
-                child: ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: Colors.white24),
-                  ),
-                  title: Text('$dateLabel · ${LobbyVariants.labelFor(m.gameVariant)}'),
-                  subtitle: Text('$result · score ${m.myFinalScore ?? '—'} · ${m.roomCode}'),
+              padding: const EdgeInsets.only(bottom: 10),
+              child: LobbyPanel(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                borderColor: resultColor.withValues(alpha: 0.35),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: resultColor.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(color: resultColor.withValues(alpha: 0.45)),
+                      ),
+                      child: Text(
+                        result.toUpperCase(),
+                        style: LobbyText.label(size: 10, color: resultColor),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$dateLabel · ${LobbyVariants.labelFor(m.gameVariant)}',
+                            style: LobbyText.body(size: 13, weight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Score ${m.myFinalScore ?? '—'} · ${m.roomCode}',
+                            style: LobbyText.bodyMuted(size: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
           }),
+          if (hasPager || totalElements > 0) ...[
+            const SizedBox(height: 4),
+            LobbyPanel(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              borderColor: LobbyColors.feltBright.withValues(alpha: 0.35),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Previous page',
+                    onPressed: loading || onPrev == null ? null : onPrev,
+                    style: IconButton.styleFrom(
+                      foregroundColor: LobbyColors.chipYellow,
+                      disabledForegroundColor: LobbyColors.creamMuted.withValues(alpha: 0.35),
+                    ),
+                    icon: const Icon(Icons.chevron_left_rounded),
+                  ),
+                  Expanded(
+                    child: Text(
+                      totalPages <= 0
+                          ? '${matches.length} hands'
+                          : 'Page ${page + 1} of $totalPages · $totalElements hands',
+                      textAlign: TextAlign.center,
+                      style: LobbyText.bodyMuted(size: 12),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Next page',
+                    onPressed: loading || onNext == null ? null : onNext,
+                    style: IconButton.styleFrom(
+                      foregroundColor: LobbyColors.chipYellow,
+                      disabledForegroundColor: LobbyColors.creamMuted.withValues(alpha: 0.35),
+                    ),
+                    icon: const Icon(Icons.chevron_right_rounded),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ],
     );
   }

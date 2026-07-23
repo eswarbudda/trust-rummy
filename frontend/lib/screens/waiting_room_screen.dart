@@ -8,6 +8,8 @@ import '../lobby/lobby_models.dart';
 import '../services/auth_session_service.dart';
 import '../services/game_websocket_service.dart';
 import '../services/room_api_service.dart';
+import '../theme/lobby_theme.dart';
+import '../widgets/common/screen_background.dart';
 import 'rummy_game_screen.dart';
 
 /// Dedicated waiting room after create/join. Owns table seating UI + host start.
@@ -240,8 +242,10 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
         await _leave();
       },
       child: Scaffold(
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: Text('Waiting · ${widget.roomCode}'),
+          backgroundColor: Colors.transparent,
+          title: Text('Waiting · ${widget.roomCode}', style: LobbyText.body(size: 16, weight: FontWeight.w700)),
           actions: [
             IconButton(
               tooltip: 'Copy room code',
@@ -253,67 +257,96 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                   );
                 }
               },
-              icon: const Icon(Icons.copy),
+              icon: const Icon(Icons.copy_rounded, color: LobbyColors.gold),
             ),
           ],
         ),
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    LobbyVariants.labelFor(room?.gameVariant),
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Share code ${widget.roomCode} with friends. '
-                    '${room?.maxPlayers != null ? "Max ${room!.maxPlayers} players." : ""}',
-                    style: const TextStyle(color: Colors.white60),
-                  ),
-                  const SizedBox(height: 24),
-                  Text('Seated players', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 10),
-                  if (players.isEmpty)
-                    const Text('Loading seats…', style: TextStyle(color: Colors.white54))
-                  else
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final p in players)
-                          Chip(
-                            label: Text('#${p.seatNumber ?? '?'} ${p.username}${p.seatNumber == 0 ? " (host)" : ""}'),
-                          ),
-                      ],
+        body: ScreenBackground.lobby(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      LobbyVariants.labelFor(room?.gameVariant),
+                      style: LobbyText.brand(size: 30),
                     ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 16),
-                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Share code ${widget.roomCode} — gather the table! '
+                      '${room?.maxPlayers != null ? "Max ${room!.maxPlayers} players." : ""}',
+                      style: LobbyText.bodyMuted(),
+                    ),
+                    const SizedBox(height: 24),
+                    LobbyPanel(
+                      borderColor: LobbyColors.feltBright.withValues(alpha: 0.5),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('AT THE TABLE', style: LobbyText.label(size: 11)),
+                          const SizedBox(height: 12),
+                          if (players.isEmpty)
+                            Text('Dealing seats…', style: LobbyText.bodyMuted())
+                          else
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final p in players)
+                                  Chip(
+                                    backgroundColor: (p.seatNumber == 0 ? LobbyColors.chipYellow : LobbyColors.feltBright)
+                                        .withValues(alpha: 0.22),
+                                    side: BorderSide(
+                                      color: (p.seatNumber == 0 ? LobbyColors.chipYellow : LobbyColors.feltBright)
+                                          .withValues(alpha: 0.65),
+                                    ),
+                                    label: Text(
+                                      '${p.seatNumber == 0 ? "👑 " : ""}${p.username}',
+                                      style: LobbyText.body(size: 12, weight: FontWeight.w700),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 16),
+                      Text(_error!, style: LobbyText.body(color: LobbyColors.cardRed)),
+                    ],
+                    const Spacer(),
+                    if (widget.isHost)
+                      FilledButton.icon(
+                        onPressed: canStart ? _startMatch : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: LobbyColors.chipYellow,
+                          foregroundColor: LobbyColors.ink,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: Text(_busy ? 'Shuffling…' : 'Start Match'),
+                      )
+                    else
+                      Text(
+                        'Waiting for the host to start… 🃏',
+                        textAlign: TextAlign.center,
+                        style: LobbyText.bodyMuted(),
+                      ),
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: _busy ? null : _leave,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: LobbyColors.cream,
+                        side: BorderSide(color: LobbyColors.chipYellow.withValues(alpha: 0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text(widget.isHost ? 'Cancel room' : 'Leave room'),
+                    ),
                   ],
-                  const Spacer(),
-                  if (widget.isHost)
-                    FilledButton.icon(
-                      onPressed: canStart ? _startMatch : null,
-                      icon: const Icon(Icons.play_arrow),
-                      label: Text(_busy ? 'Starting…' : 'Start Match'),
-                    )
-                  else
-                    const Text(
-                      'Waiting for the host to start the match…',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                  const SizedBox(height: 10),
-                  OutlinedButton(
-                    onPressed: _busy ? null : _leave,
-                    child: Text(widget.isHost ? 'Cancel room' : 'Leave room'),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

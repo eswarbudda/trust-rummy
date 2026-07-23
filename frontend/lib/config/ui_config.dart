@@ -37,7 +37,7 @@ class UiConfig {
   /// Dark scrim over the lobby image so cards/CTAs stay readable (0–100).
   static const int lobbyScrimPercent = int.fromEnvironment(
     'LOBBY_SCRIM_PERCENT',
-    defaultValue: 64,
+    defaultValue: 42,
   );
 
   // ---- Game board ----
@@ -67,4 +67,22 @@ class UiConfig {
   static double get lobbyScrimOpacity => (lobbyScrimPercent.clamp(0, 100)) / 100.0;
 
   static double get boardScrimOpacity => (boardScrimPercent.clamp(0, 100)) / 100.0;
+
+  // ---- Currency ----
+
+  /// Display symbol for wallet / stakes. Default Indian rupee.
+  /// Override: `--dart-define=CURRENCY_SYMBOL=$` or `CURRENCY_SYMBOL=₹`
+  static const String currencySymbol = String.fromEnvironment(
+    'CURRENCY_SYMBOL',
+    defaultValue: '₹',
+  );
+
+  /// Formats an amount with [currencySymbol], e.g. `₹ 80` or `₹ 12.50`.
+  static String formatMoney(num amount, {bool trimZeroDecimals = true}) {
+    final value = amount.toDouble();
+    final text = trimZeroDecimals && value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
+    return '$currencySymbol $text';
+  }
 }

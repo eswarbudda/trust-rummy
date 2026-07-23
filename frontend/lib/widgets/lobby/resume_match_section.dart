@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../lobby/lobby_models.dart';
+import '../../theme/lobby_theme.dart';
 
 class ResumeMatchSection extends StatelessWidget {
   const ResumeMatchSection({
@@ -14,38 +15,42 @@ class ResumeMatchSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.35),
-        gradient: LinearGradient(
-          colors: [
-            Theme.of(context).colorScheme.primary.withValues(alpha: 0.45),
-            Colors.teal.withValues(alpha: 0.28),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.55)),
+    return LobbyPanel(
+      borderColor: LobbyColors.jokerOrange.withValues(alpha: 0.65),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          LobbyColors.jokerOrange.withValues(alpha: 0.55),
+          LobbyColors.cardRed.withValues(alpha: 0.35),
+          LobbyColors.inkSoft.withValues(alpha: 0.92),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Resume match',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-          ),
+          Text('TABLE STILL OPEN', style: LobbyText.label(size: 11, color: LobbyColors.cream)),
+          const SizedBox(height: 4),
+          Text('Jump back in 🎲', style: LobbyText.section(size: 24)),
           const SizedBox(height: 8),
           Text(
             'Room ${info.roomCode} · ${LobbyVariants.labelFor(info.gameVariant)} · '
             '${info.playerCount}${info.maxPlayers != null ? "/${info.maxPlayers}" : ""} players · ${info.status}',
-            style: const TextStyle(color: Colors.white70),
+            style: LobbyText.bodyMuted(),
           ),
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: onResume,
+            style: FilledButton.styleFrom(
+              backgroundColor: LobbyColors.chipYellow,
+              foregroundColor: LobbyColors.ink,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            ),
             icon: const Icon(Icons.play_arrow_rounded),
-            label: const Text('Resume Match'),
+            label: Text(
+              'Resume Match',
+              style: LobbyText.body(size: 14, weight: FontWeight.w800, color: LobbyColors.ink),
+            ),
           ),
         ],
       ),
