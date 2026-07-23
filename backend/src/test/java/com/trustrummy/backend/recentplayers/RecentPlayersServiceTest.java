@@ -41,13 +41,23 @@ class RecentPlayersServiceTest {
     private FriendPort friendPort;
     @Mock
     private FriendsCommandPort friendsCommandPort;
+    @Mock
+    private com.trustrummy.backend.rooms.RoomPort roomPort;
+    @Mock
+    private com.trustrummy.backend.invitations.InvitationPort invitationPort;
 
     private RecentPlayersService service;
 
     @BeforeEach
     void setUp() {
         service = new RecentPlayersService(
-                encounterRepository, userLookupPort, presenceService, friendPort, friendsCommandPort);
+                encounterRepository,
+                userLookupPort,
+                presenceService,
+                friendPort,
+                friendsCommandPort,
+                roomPort,
+                invitationPort);
     }
 
     @Test

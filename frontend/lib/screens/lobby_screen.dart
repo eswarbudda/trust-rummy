@@ -15,6 +15,7 @@ import '../widgets/common/screen_background.dart';
 import '../theme/lobby_theme.dart';
 import 'friends_screen.dart';
 import 'home_screen.dart';
+import 'invitations_screen.dart';
 import 'play_groups_screen.dart';
 import 'recent_players_screen.dart';
 import 'waiting_room_screen.dart';
@@ -123,6 +124,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
+  void _openInvitations() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const InvitationsScreen()),
+    );
+  }
+
   void _openSettings() {
     showModalBottomSheet<void>(
       context: context,
@@ -168,6 +175,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
       onFriends: _openFriends,
       onRecentPlayers: _openRecentPlayers,
       onPlayGroups: _openPlayGroups,
+      onInvitations: _openInvitations,
     );
   }
 

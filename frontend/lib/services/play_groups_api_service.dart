@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'api_client.dart';
 import '../config/api_config.dart';
+import 'invitations_api_service.dart';
 
 class PlayGroupMember {
   PlayGroupMember({
@@ -121,6 +122,31 @@ class PlayGroupsApiService {
     if (response.statusCode >= 400) {
       throw Exception(_errorMessage(response.body, 'Failed to delete group'));
     }
+  }
+
+  Future<StartGroupGameResult> startGame({
+    required int groupId,
+    required String gameVariant,
+    required int maxPlayers,
+    required double stakeAmount,
+    int? dealsPerMatch,
+    String? name,
+  }) async {
+    final response = await _client.post(
+      ApiConfig.playGroupGamesUri(groupId),
+      body: {
+        if (name != null && name.isNotEmpty) 'name': name,
+        'maxPlayers': maxPlayers,
+        'stakeAmount': stakeAmount,
+        'gameType': 'RUMMY',
+        'gameVariant': gameVariant,
+        if (dealsPerMatch != null) 'dealsPerMatch': dealsPerMatch,
+      },
+    );
+    if (response.statusCode >= 400) {
+      throw Exception(_errorMessage(response.body, 'Failed to start group game'));
+    }
+    return StartGroupGameResult.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   String _errorMessage(String body, String fallback) {

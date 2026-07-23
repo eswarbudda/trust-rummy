@@ -58,6 +58,15 @@ class RecentPlayersApiService {
     }
   }
 
+  Future<String> inviteAgain(int userId) async {
+    final response = await _client.post(ApiConfig.recentPlayerInviteAgainUri(userId));
+    if (response.statusCode >= 400) {
+      throw Exception(_errorMessage(response.body, 'Failed to invite again'));
+    }
+    final map = jsonDecode(response.body) as Map<String, dynamic>;
+    return map['roomCode'] as String;
+  }
+
   String _errorMessage(String body, String fallback) {
     try {
       final map = jsonDecode(body) as Map<String, dynamic>;

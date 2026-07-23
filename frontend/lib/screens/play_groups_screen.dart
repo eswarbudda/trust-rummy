@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../lobby/lobby_controller.dart';
 import '../services/play_groups_api_service.dart';
 import '../theme/lobby_theme.dart';
 import '../widgets/common/screen_background.dart';
+import '../widgets/lobby/create_table_dialog.dart';
+import 'waiting_room_screen.dart';
 
 class PlayGroupsScreen extends StatefulWidget {
   const PlayGroupsScreen({super.key});
@@ -13,6 +16,7 @@ class PlayGroupsScreen extends StatefulWidget {
 
 class _PlayGroupsScreenState extends State<PlayGroupsScreen> {
   final PlayGroupsApiService _api = PlayGroupsApiService();
+  final LobbyController _lobby = LobbyController();
 
   List<PlayGroup> _groups = const [];
   bool _loading = true;
@@ -22,6 +26,12 @@ class _PlayGroupsScreenState extends State<PlayGroupsScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _lobby.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -117,6 +127,14 @@ class _PlayGroupsScreenState extends State<PlayGroupsScreen> {
                     style: FilledButton.styleFrom(backgroundColor: LobbyColors.gold, foregroundColor: LobbyColors.ink),
                     child: const Text('Add friend'),
                   ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _startGame(detail);
+                    },
+                    child: const Text('Start game'),
+                  ),
                 ],
               ),
             ),
@@ -124,6 +142,36 @@ class _PlayGroupsScreenState extends State<PlayGroupsScreen> {
         },
       );
       await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _startGame(PlayGroup group) async {
+    final result = await CreateTableDialog.show(context);
+    if (result == null || !mounted) return;
+    try {
+      final started = await _api.startGame(
+        groupId: group.id,
+        name: group.name,
+        gameVariant: result.gameVariant,
+        maxPlayers: result.maxPlayers,
+        stakeAmount: result.stakeAmount,
+        dealsPerMatch: result.dealsPerMatch,
+      );
+      final room = await _lobby.refreshRoom(started.roomCode);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => WaitingRoomScreen(
+            lobby: _lobby,
+            roomCode: room.roomCode,
+            isHost: true,
+            initialRoom: room,
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));

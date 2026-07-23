@@ -3,12 +3,22 @@ package com.trustrummy.backend.playgroups;
 import com.trustrummy.backend.exception.ForbiddenOperationException;
 import com.trustrummy.backend.exception.ResourceNotFoundException;
 import com.trustrummy.backend.friends.FriendPort;
+import com.trustrummy.backend.game.model.GameType;
+import com.trustrummy.backend.game.model.GameVariant;
+import com.trustrummy.backend.invitations.CreateInvitationsCommand;
+import com.trustrummy.backend.invitations.InvitationPort;
+import com.trustrummy.backend.invitations.InvitationResponse;
+import com.trustrummy.backend.invitations.InvitationView;
+import com.trustrummy.backend.rooms.CreateWaitingRoomCommand;
+import com.trustrummy.backend.rooms.RoomPort;
+import com.trustrummy.backend.rooms.RoomSummary;
 import com.trustrummy.backend.users.UserLookupPort;
 import com.trustrummy.backend.users.UserSummary;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +32,8 @@ public class PlayGroupsService {
     private final PlayGroupMemberRepository memberRepository;
     private final UserLookupPort userLookupPort;
     private final FriendPort friendPort;
+    private final RoomPort roomPort;
+    private final InvitationPort invitationPort;
 
     @Transactional(readOnly = true)
     public List<PlayGroupResponse> listMyGroups(long userId) {
@@ -148,6 +160,58 @@ public class PlayGroupsService {
         membership.setLeftAt(Instant.now());
         memberRepository.save(membership);
         return toResponse(group, true);
+    }
+
+    @Transactional
+    public StartPlayGroupGameResponse startGame(
+            long ownerId,
+            long groupId,
+            String roomName,
+            Integer maxPlayers,
+            BigDecimal stakeAmount,
+            GameType gameType,
+            GameVariant gameVariant,
+            Integer dealsPerMatch
+    ) {
+        PlayGroupEntity group = requireActiveGroup(groupId);
+        requireOwner(group, ownerId);
+
+        UserSummary owner = userLookupPort.findById(ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        List<PlayGroupMemberEntity> members =
+                memberRepository.findByGroupIdAndStatus(groupId, PlayGroupMemberStatus.ACTIVE);
+        List<Long> inviteeIds = members.stream()
+                .map(PlayGroupMemberEntity::getUserId)
+                .filter(id -> !id.equals(ownerId))
+                .toList();
+
+        String name = (roomName == null || roomName.isBlank())
+                ? group.getName()
+                : roomName.trim();
+
+        RoomSummary room = roomPort.createWaitingRoom(
+                owner.username(),
+                new CreateWaitingRoomCommand(
+                        name,
+                        maxPlayers,
+                        stakeAmount,
+                        gameType != null ? gameType : GameType.RUMMY,
+                        gameVariant != null ? gameVariant : GameVariant.POOL_101,
+                        dealsPerMatch
+                )
+        );
+
+        List<InvitationView> invites = invitationPort.createBatch(new CreateInvitationsCommand(
+                room.id(),
+                groupId,
+                ownerId,
+                inviteeIds,
+                null
+        ));
+
+        List<InvitationResponse> responses = invites.stream().map(InvitationResponse::from).toList();
+        return new StartPlayGroupGameResponse(room.id(), room.roomCode(), groupId, group.getName(), responses);
     }
 
     private PlayGroupEntity requireActiveGroup(long groupId) {

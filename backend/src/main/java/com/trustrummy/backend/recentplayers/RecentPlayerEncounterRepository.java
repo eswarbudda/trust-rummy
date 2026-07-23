@@ -8,10 +8,13 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 public interface RecentPlayerEncounterRepository extends JpaRepository<RecentPlayerEncounterEntity, Long> {
 
     List<RecentPlayerEncounterEntity> findByUserIdOrderByLastPlayedAtDesc(long userId, Pageable pageable);
+
+    Optional<RecentPlayerEncounterEntity> findByUserIdAndOpponentId(long userId, long opponentId);
 
     @Modifying
     @Query(value = """

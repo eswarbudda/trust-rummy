@@ -49,8 +49,11 @@ public class RecentPlayersController {
     }
 
     @PostMapping("/{userId}/invite-again")
-    public void inviteAgain(@PathVariable("userId") long ignored) {
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Invitations module not available yet");
+    public InviteAgainResponse inviteAgain(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable("userId") long opponentUserId
+    ) {
+        return recentPlayersService.inviteAgain(requireUserId(principal), opponentUserId);
     }
 
     @GetMapping("/{userId}/profile")

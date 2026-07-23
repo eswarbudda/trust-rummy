@@ -35,12 +35,17 @@ class PlayGroupsServiceTest {
     private UserLookupPort userLookupPort;
     @Mock
     private FriendPort friendPort;
+    @Mock
+    private com.trustrummy.backend.rooms.RoomPort roomPort;
+    @Mock
+    private com.trustrummy.backend.invitations.InvitationPort invitationPort;
 
     private PlayGroupsService service;
 
     @BeforeEach
     void setUp() {
-        service = new PlayGroupsService(groupRepository, memberRepository, userLookupPort, friendPort);
+        service = new PlayGroupsService(
+                groupRepository, memberRepository, userLookupPort, friendPort, roomPort, invitationPort);
     }
 
     @Test

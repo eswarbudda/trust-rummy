@@ -91,8 +91,21 @@ public class PlayGroupsController {
     }
 
     @PostMapping("/{id}/games")
-    public void startGame(@PathVariable("id") long ignored) {
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Invitations module not available yet");
+    public StartPlayGroupGameResponse startGame(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable("id") long id,
+            @Valid @RequestBody StartPlayGroupGameRequest body
+    ) {
+        return playGroupsService.startGame(
+                requireUserId(principal),
+                id,
+                body.name(),
+                body.maxPlayers(),
+                body.stakeAmount(),
+                body.gameType(),
+                body.gameVariant(),
+                body.dealsPerMatch()
+        );
     }
 
     private Long requireUserId(UserDetails principal) {

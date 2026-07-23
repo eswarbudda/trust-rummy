@@ -11,6 +11,7 @@ class LobbySideMenu extends StatelessWidget {
     this.onFriends,
     this.onRecentPlayers,
     this.onPlayGroups,
+    this.onInvitations,
     this.compact = false,
   });
 
@@ -19,6 +20,7 @@ class LobbySideMenu extends StatelessWidget {
   final VoidCallback? onFriends;
   final VoidCallback? onRecentPlayers;
   final VoidCallback? onPlayGroups;
+  final VoidCallback? onInvitations;
   final bool compact;
 
   static const double wideWidth = 212;
@@ -63,6 +65,12 @@ class LobbySideMenu extends StatelessWidget {
         label: 'Groups',
         subtitle: 'Play',
         onTap: onPlayGroups,
+      ),
+      _MenuItem(
+        icon: Icons.mail_outline_rounded,
+        label: 'Invites',
+        subtitle: 'Pending',
+        onTap: onInvitations,
       ),
     ];
 

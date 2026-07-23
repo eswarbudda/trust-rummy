@@ -119,6 +119,9 @@ class ApiConfig {
   static Uri recentPlayerFriendRequestUri(int userId) =>
       Uri.parse('$httpBaseUrl/api/v1/recent-players/$userId/friend-request');
 
+  static Uri recentPlayerInviteAgainUri(int userId) =>
+      Uri.parse('$httpBaseUrl/api/v1/recent-players/$userId/invite-again');
+
   // ---- Play groups (/api/v1/play-groups) ----
 
   static Uri get playGroupsUri => Uri.parse('$httpBaseUrl/api/v1/play-groups');
@@ -129,6 +132,23 @@ class ApiConfig {
 
   static Uri playGroupMemberUri(int id, int userId) =>
       Uri.parse('$httpBaseUrl/api/v1/play-groups/$id/members/$userId');
+
+  static Uri playGroupGamesUri(int id) =>
+      Uri.parse('$httpBaseUrl/api/v1/play-groups/$id/games');
+
+  // ---- Invitations (/api/v1/invitations) ----
+
+  static Uri get invitationsPendingUri =>
+      Uri.parse('$httpBaseUrl/api/v1/invitations/pending');
+
+  static Uri invitationAcceptUri(String id) =>
+      Uri.parse('$httpBaseUrl/api/v1/invitations/$id/accept');
+
+  static Uri invitationDeclineUri(String id) =>
+      Uri.parse('$httpBaseUrl/api/v1/invitations/$id/decline');
+
+  static Uri roomInvitationsUri(String roomCode) =>
+      Uri.parse('$httpBaseUrl/api/v1/rooms/$roomCode/invitations');
 
   /// Gameplay WebSocket for a specific room, per `RULES_ENGINE.md` section 9.
   static Uri gameWsUri(String roomCode, String token) =>

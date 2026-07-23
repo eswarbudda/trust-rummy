@@ -1,9 +1,19 @@
 package com.trustrummy.backend.recentplayers;
 
+import com.trustrummy.backend.exception.ResourceNotFoundException;
 import com.trustrummy.backend.friends.FriendPort;
 import com.trustrummy.backend.friends.FriendsCommandPort;
 import com.trustrummy.backend.friends.FriendshipView;
+import com.trustrummy.backend.game.model.GameType;
+import com.trustrummy.backend.game.model.GameVariant;
+import com.trustrummy.backend.invitations.CreateInvitationsCommand;
+import com.trustrummy.backend.invitations.InvitationPort;
+import com.trustrummy.backend.invitations.InvitationResponse;
+import com.trustrummy.backend.invitations.InvitationView;
 import com.trustrummy.backend.presence.PresenceService;
+import com.trustrummy.backend.rooms.CreateWaitingRoomCommand;
+import com.trustrummy.backend.rooms.RoomPort;
+import com.trustrummy.backend.rooms.RoomSummary;
 import com.trustrummy.backend.users.UserLookupPort;
 import com.trustrummy.backend.users.UserSummary;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +21,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -30,6 +41,8 @@ public class RecentPlayersService implements RecentPlayersPort {
     private final PresenceService presenceService;
     private final FriendPort friendPort;
     private final FriendsCommandPort friendsCommandPort;
+    private final RoomPort roomPort;
+    private final InvitationPort invitationPort;
 
     @Override
     @Transactional
@@ -81,6 +94,51 @@ public class RecentPlayersService implements RecentPlayersPort {
     @Transactional
     public FriendshipView sendFriendRequest(long requesterId, long opponentUserId) {
         return friendsCommandPort.sendRequestByUserId(requesterId, opponentUserId);
+    }
+
+    @Transactional
+    public InviteAgainResponse inviteAgain(long userId, long opponentUserId) {
+        if (userId == opponentUserId) {
+            throw new IllegalArgumentException("Cannot invite yourself");
+        }
+        RecentPlayerEncounterEntity encounter =
+                encounterRepository.findByUserIdAndOpponentId(userId, opponentUserId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Recent opponent not found"));
+
+        UserSummary inviter = userLookupPort.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        userLookupPort.findById(opponentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        RoomSummary room = roomPort.createWaitingRoom(
+                inviter.username(),
+                new CreateWaitingRoomCommand(
+                        "Rematch",
+                        2,
+                        BigDecimal.ZERO,
+                        GameType.RUMMY,
+                        GameVariant.POOL_101,
+                        null
+                )
+        );
+
+        List<InvitationView> invites = invitationPort.createBatch(new CreateInvitationsCommand(
+                room.id(),
+                null,
+                userId,
+                List.of(opponentUserId),
+                null
+        ));
+        InvitationResponse invitation = invites.isEmpty()
+                ? null
+                : InvitationResponse.from(invites.get(0));
+
+        return new InviteAgainResponse(
+                room.id(),
+                room.roomCode(),
+                encounter.getOpponentId(),
+                invitation
+        );
     }
 
     public List<RecentOpponentResponse> listRecent(long userId) {

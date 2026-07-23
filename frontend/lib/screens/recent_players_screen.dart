@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../lobby/lobby_controller.dart';
 import '../services/recent_players_api_service.dart';
 import '../theme/lobby_theme.dart';
 import '../widgets/common/screen_background.dart';
+import 'waiting_room_screen.dart';
 
 class RecentPlayersScreen extends StatefulWidget {
   const RecentPlayersScreen({super.key});
@@ -13,6 +15,7 @@ class RecentPlayersScreen extends StatefulWidget {
 
 class _RecentPlayersScreenState extends State<RecentPlayersScreen> {
   final RecentPlayersApiService _api = RecentPlayersApiService();
+  final LobbyController _lobby = LobbyController();
 
   List<RecentOpponent> _opponents = const [];
   bool _loading = true;
@@ -22,6 +25,12 @@ class _RecentPlayersScreenState extends State<RecentPlayersScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _lobby.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -53,6 +62,27 @@ class _RecentPlayersScreenState extends State<RecentPlayersScreen> {
         SnackBar(content: Text('Friend request sent to ${opponent.displayName}')),
       );
       await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _inviteAgain(RecentOpponent opponent) async {
+    try {
+      final roomCode = await _api.inviteAgain(opponent.userId);
+      final room = await _lobby.refreshRoom(roomCode);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => WaitingRoomScreen(
+            lobby: _lobby,
+            roomCode: room.roomCode,
+            isHost: true,
+            initialRoom: room,
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -146,6 +176,10 @@ class _RecentPlayersScreenState extends State<RecentPlayersScreen> {
                                         onPressed: () => _addFriend(opponent),
                                         child: const Text('Add'),
                                       ),
+                                    TextButton(
+                                      onPressed: () => _inviteAgain(opponent),
+                                      child: const Text('Invite'),
+                                    ),
                                   ],
                                 ),
                               );
