@@ -5,6 +5,7 @@ import com.trustrummy.backend.dto.RoomReadyRequest;
 import com.trustrummy.backend.dto.RoomResponse;
 import com.trustrummy.backend.entity.GameRoom;
 import com.trustrummy.backend.entity.RoomPlayer;
+import com.trustrummy.backend.entity.RoomVisibility;
 import com.trustrummy.backend.service.RoomService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,13 @@ public class RoomController {
             @AuthenticationPrincipal UserDetails principal,
             @Valid @RequestBody RoomCreateRequest request
     ) {
+        // GROUP_ONLY + sourceGroupId are reserved for play-group start (RoomPort).
+        if (request.getVisibility() == RoomVisibility.GROUP_ONLY || request.getSourceGroupId() != null) {
+            throw new IllegalArgumentException("GROUP_ONLY rooms must be created via a play group");
+        }
+        if (request.getVisibility() == null) {
+            request.setVisibility(RoomVisibility.PUBLIC);
+        }
         GameRoom room = roomService.createRoom(principal.getUsername(), request);
         List<RoomPlayer> seated = roomService.getSeatedPlayers(room.getId());
         return ResponseEntity.ok(RoomResponse.from(room, seated));

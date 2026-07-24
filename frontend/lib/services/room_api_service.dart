@@ -36,6 +36,8 @@ class CreatedRoom {
   final int? maxPlayers;
   final double? stakeAmount;
   final int? dealsPerMatch;
+  final String? visibility;
+  final int? sourceGroupId;
   final List<RoomPlayerSummary> players;
 
   CreatedRoom({
@@ -46,6 +48,8 @@ class CreatedRoom {
     this.maxPlayers,
     this.stakeAmount,
     this.dealsPerMatch,
+    this.visibility,
+    this.sourceGroupId,
     this.players = const [],
   });
 
@@ -58,6 +62,8 @@ class CreatedRoom {
       maxPlayers: json['maxPlayers'] as int?,
       stakeAmount: (json['stakeAmount'] as num?)?.toDouble(),
       dealsPerMatch: json['dealsPerMatch'] as int?,
+      visibility: json['visibility'] as String?,
+      sourceGroupId: json['sourceGroupId'] as int?,
       players: (json['players'] as List<dynamic>?)
               ?.map((p) => RoomPlayerSummary.fromJson(p as Map<String, dynamic>))
               .toList() ??

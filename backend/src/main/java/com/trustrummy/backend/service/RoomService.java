@@ -5,6 +5,7 @@ import com.trustrummy.backend.entity.GameRoom;
 import com.trustrummy.backend.entity.PlayerStatus;
 import com.trustrummy.backend.entity.RoomPlayer;
 import com.trustrummy.backend.entity.RoomStatus;
+import com.trustrummy.backend.entity.RoomVisibility;
 import com.trustrummy.backend.entity.User;
 import com.trustrummy.backend.exception.ForbiddenOperationException;
 import com.trustrummy.backend.exception.ResourceNotFoundException;
@@ -16,6 +17,8 @@ import com.trustrummy.backend.game.ws.GameEvent;
 import com.trustrummy.backend.repository.GameRoomRepository;
 import com.trustrummy.backend.repository.RoomPlayerRepository;
 import com.trustrummy.backend.repository.UserRepository;
+import com.trustrummy.backend.rooms.GroupRoomAccessPort;
+import com.trustrummy.backend.rooms.PrivateRoomInvitePort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -40,12 +43,15 @@ public class RoomService {
     private final UserRepository userRepository;
     private final GameStateService gameStateService;
     private final GameBroadcastService broadcastService;
+    private final PrivateRoomInvitePort privateRoomInvitePort;
+    private final GroupRoomAccessPort groupRoomAccessPort;
 
     public GameRoom createRoom(String creatorUsername, RoomCreateRequest request) {
         User creator = userRepository.findByUsername(creatorUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown user: " + creatorUsername));
 
         GameVariant variant = request.getGameVariant() != null ? request.getGameVariant() : GameVariant.POOL_101;
+        RoomVisibility visibility = resolveVisibility(request);
 
         GameRoom room = GameRoom.builder()
                 .roomCode(generateUniqueRoomCode())
@@ -56,6 +62,8 @@ public class RoomService {
                 .gameVariant(variant)
                 .dealsPerMatch(resolveStoredDealsPerMatch(variant, request.getDealsPerMatch()))
                 .status(RoomStatus.WAITING)
+                .visibility(visibility)
+                .sourceGroupId(visibility == RoomVisibility.GROUP_ONLY ? request.getSourceGroupId() : null)
                 .createdBy(creator)
                 .build();
 
@@ -74,8 +82,9 @@ public class RoomService {
         return room;
     }
 
+    /** Lobby open tables: PUBLIC + WAITING only. */
     public List<GameRoom> listOpenRooms() {
-        return gameRoomRepository.findByStatus(RoomStatus.WAITING);
+        return gameRoomRepository.findByStatusAndVisibility(RoomStatus.WAITING, RoomVisibility.PUBLIC);
     }
 
     public GameRoom getRoomByCode(String roomCode) {
@@ -105,6 +114,7 @@ public class RoomService {
         if (existing.isPresent()) {
             RoomPlayer player = existing.get();
             if (player.getStatus() == PlayerStatus.LEFT) {
+                assertMayJoin(room, user.getId());
                 // Re-joining after having left — reactivate the same seat rather than
                 // inserting a second row (room_id, user_id) is a unique constraint.
                 player.setStatus(PlayerStatus.JOINED);
@@ -114,6 +124,8 @@ public class RoomService {
             }
             return room; // otherwise idempotent: reconnect/refresh shouldn't fail or double-seat
         }
+
+        assertMayJoin(room, user.getId());
 
         List<RoomPlayer> seated = getSeatedPlayers(room.getId());
         if (seated.size() >= room.getMaxPlayers()) {
@@ -228,6 +240,44 @@ public class RoomService {
         List<RoomPlayer> seated = new ArrayList<>(roomPlayerRepository.findByGameRoomIdAndStatusNot(roomId, PlayerStatus.LEFT));
         seated.sort(Comparator.comparing(rp -> rp.getSeatNumber() == null ? Integer.MAX_VALUE : rp.getSeatNumber()));
         return seated;
+    }
+
+    private void assertMayJoin(GameRoom room, long userId) {
+        RoomVisibility visibility = room.getVisibility() != null ? room.getVisibility() : RoomVisibility.PUBLIC;
+        switch (visibility) {
+            case PUBLIC -> {
+                // Anyone with the code may join.
+            }
+            case PRIVATE -> {
+                if (!privateRoomInvitePort.hasJoinableInvite(room.getId(), userId)) {
+                    throw new ForbiddenOperationException("This private room requires an invitation");
+                }
+            }
+            case GROUP_ONLY -> {
+                Long groupId = room.getSourceGroupId();
+                if (groupId != null && groupRoomAccessPort.isActiveMember(groupId, userId)) {
+                    // Active play-group member may join.
+                } else if (privateRoomInvitePort.hasJoinableInvite(room.getId(), userId)) {
+                    // Invited users may join even if membership check is pending.
+                } else {
+                    throw new ForbiddenOperationException("This room is limited to play-group members");
+                }
+            }
+        }
+    }
+
+    private static RoomVisibility resolveVisibility(RoomCreateRequest request) {
+        RoomVisibility visibility = request.getVisibility() != null
+                ? request.getVisibility()
+                : RoomVisibility.PUBLIC;
+        if (visibility == RoomVisibility.GROUP_ONLY) {
+            if (request.getSourceGroupId() == null) {
+                throw new IllegalArgumentException("GROUP_ONLY rooms require sourceGroupId");
+            }
+        } else if (request.getSourceGroupId() != null) {
+            throw new IllegalArgumentException("sourceGroupId is only valid for GROUP_ONLY rooms");
+        }
+        return visibility;
     }
 
     private void disbandRoom(GameRoom room) {

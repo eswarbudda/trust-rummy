@@ -1,5 +1,6 @@
 package com.trustrummy.backend.recentplayers;
 
+import com.trustrummy.backend.entity.RoomVisibility;
 import com.trustrummy.backend.exception.ResourceNotFoundException;
 import com.trustrummy.backend.friends.FriendPort;
 import com.trustrummy.backend.friends.FriendsCommandPort;
@@ -118,6 +119,8 @@ public class RecentPlayersService implements RecentPlayersPort {
                         BigDecimal.ZERO,
                         GameType.RUMMY,
                         GameVariant.POOL_101,
+                        null,
+                        RoomVisibility.PRIVATE,
                         null
                 )
         );

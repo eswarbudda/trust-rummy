@@ -1,5 +1,6 @@
 package com.trustrummy.backend.dto;
 
+import com.trustrummy.backend.entity.RoomVisibility;
 import com.trustrummy.backend.game.model.GameType;
 import com.trustrummy.backend.game.model.GameVariant;
 import jakarta.validation.constraints.Max;
@@ -38,4 +39,14 @@ public class RoomCreateRequest {
     @Min(1)
     @Max(50)
     private Integer dealsPerMatch;
+
+    /**
+     * Defaults to {@link RoomVisibility#PUBLIC}.
+     * HTTP creates may use PUBLIC or PRIVATE; {@link RoomVisibility#GROUP_ONLY}
+     * is reserved for play-group start via {@code RoomPort}.
+     */
+    private RoomVisibility visibility;
+
+    /** Required when visibility is {@link RoomVisibility#GROUP_ONLY}. */
+    private Long sourceGroupId;
 }

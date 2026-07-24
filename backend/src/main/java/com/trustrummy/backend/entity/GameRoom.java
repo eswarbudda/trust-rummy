@@ -64,6 +64,15 @@ public class GameRoom {
     @Builder.Default
     private RoomStatus status = RoomStatus.WAITING;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private RoomVisibility visibility = RoomVisibility.PUBLIC;
+
+    /** Set when {@link #visibility} is {@link RoomVisibility#GROUP_ONLY}. */
+    @Column(name = "source_group_id")
+    private Long sourceGroupId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private User createdBy;

@@ -1,5 +1,6 @@
 package com.trustrummy.backend.playgroups;
 
+import com.trustrummy.backend.entity.RoomVisibility;
 import com.trustrummy.backend.exception.ForbiddenOperationException;
 import com.trustrummy.backend.exception.ResourceNotFoundException;
 import com.trustrummy.backend.friends.FriendPort;
@@ -287,7 +288,9 @@ public class PlayGroupsService {
                         stakeAmount,
                         gameType != null ? gameType : GameType.RUMMY,
                         gameVariant != null ? gameVariant : GameVariant.POOL_101,
-                        dealsPerMatch
+                        dealsPerMatch,
+                        RoomVisibility.GROUP_ONLY,
+                        groupId
                 )
         );
 

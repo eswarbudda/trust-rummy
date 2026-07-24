@@ -1,5 +1,6 @@
 package com.trustrummy.backend.rooms;
 
+import com.trustrummy.backend.entity.RoomVisibility;
 import com.trustrummy.backend.game.model.GameType;
 import com.trustrummy.backend.game.model.GameVariant;
 
@@ -14,6 +15,18 @@ public record CreateWaitingRoomCommand(
         BigDecimal stakeAmount,
         GameType gameType,
         GameVariant gameVariant,
-        Integer dealsPerMatch
+        Integer dealsPerMatch,
+        RoomVisibility visibility,
+        Long sourceGroupId
 ) {
+    public CreateWaitingRoomCommand(
+            String name,
+            Integer maxPlayers,
+            BigDecimal stakeAmount,
+            GameType gameType,
+            GameVariant gameVariant,
+            Integer dealsPerMatch
+    ) {
+        this(name, maxPlayers, stakeAmount, gameType, gameVariant, dealsPerMatch, RoomVisibility.PUBLIC, null);
+    }
 }

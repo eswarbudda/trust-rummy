@@ -24,6 +24,8 @@ public class RoomResponse {
     private String gameType;
     private String gameVariant;
     private Integer dealsPerMatch;
+    private String visibility;
+    private Long sourceGroupId;
     /** Only populated by endpoints that already have the seated players loaded (create/join). */
     private List<RoomPlayerSummary> players;
 
@@ -42,6 +44,8 @@ public class RoomResponse {
                 .gameType(room.getGameType() != null ? room.getGameType().name() : null)
                 .gameVariant(room.getGameVariant() != null ? room.getGameVariant().name() : null)
                 .dealsPerMatch(room.getDealsPerMatch())
+                .visibility(room.getVisibility() != null ? room.getVisibility().name() : null)
+                .sourceGroupId(room.getSourceGroupId())
                 .players(seatedPlayers == null ? null : seatedPlayers.stream()
                         .map(rp -> RoomPlayerSummary.builder()
                                 .userId(rp.getUser().getId())

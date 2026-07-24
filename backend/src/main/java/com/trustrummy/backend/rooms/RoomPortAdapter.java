@@ -2,6 +2,7 @@ package com.trustrummy.backend.rooms;
 
 import com.trustrummy.backend.dto.RoomCreateRequest;
 import com.trustrummy.backend.entity.GameRoom;
+import com.trustrummy.backend.entity.RoomVisibility;
 import com.trustrummy.backend.entity.User;
 import com.trustrummy.backend.exception.ResourceNotFoundException;
 import com.trustrummy.backend.repository.GameRoomRepository;
@@ -27,6 +28,8 @@ public class RoomPortAdapter implements RoomPort {
         request.setGameType(command.gameType());
         request.setGameVariant(command.gameVariant());
         request.setDealsPerMatch(command.dealsPerMatch());
+        request.setVisibility(command.visibility() != null ? command.visibility() : RoomVisibility.PUBLIC);
+        request.setSourceGroupId(command.sourceGroupId());
         return toSummary(roomService.createRoom(creatorUsername, request));
     }
 
@@ -63,6 +66,7 @@ public class RoomPortAdapter implements RoomPort {
         if (creator == null || creator.getId() == null) {
             throw new IllegalStateException("Room has no creator");
         }
+        RoomVisibility visibility = room.getVisibility() != null ? room.getVisibility() : RoomVisibility.PUBLIC;
         return new RoomSummary(
                 room.getId(),
                 room.getRoomCode(),
@@ -70,7 +74,9 @@ public class RoomPortAdapter implements RoomPort {
                 creator.getId(),
                 creator.getUsername(),
                 room.getMaxPlayers() != null ? room.getMaxPlayers() : 6,
-                room.getName()
+                room.getName(),
+                visibility.name(),
+                room.getSourceGroupId()
         );
     }
 }

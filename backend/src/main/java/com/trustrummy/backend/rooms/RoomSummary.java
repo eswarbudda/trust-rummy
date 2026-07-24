@@ -10,7 +10,9 @@ public record RoomSummary(
         long createdByUserId,
         String createdByUsername,
         int maxPlayers,
-        String name
+        String name,
+        String visibility,
+        Long sourceGroupId
 ) {
     public boolean isWaiting() {
         return "WAITING".equals(status);

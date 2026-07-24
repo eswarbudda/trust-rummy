@@ -158,6 +158,6 @@ class InvitationsServiceTest {
     }
 
     private static RoomSummary waitingRoom(long id, String code, long hostId) {
-        return new RoomSummary(id, code, "WAITING", hostId, "alice", 6, "Table");
+        return new RoomSummary(id, code, "WAITING", hostId, "alice", 6, "Table", "PUBLIC", null);
     }
 }

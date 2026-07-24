@@ -25,4 +25,10 @@ public interface GameInvitationRepository extends JpaRepository<GameInvitationEn
             @Param("roomId") long roomId,
             @Param("status") InvitationStatus status
     );
+
+    boolean existsByRoomIdAndInviteeIdAndStatusIn(
+            long roomId,
+            long inviteeId,
+            java.util.Collection<InvitationStatus> statuses
+    );
 }
