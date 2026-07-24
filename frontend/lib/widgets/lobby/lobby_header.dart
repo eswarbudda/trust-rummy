@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/ui_config.dart';
 import '../../lobby/lobby_controller.dart';
+import '../../screens/notifications_screen.dart';
 import '../../services/user_presence_service.dart';
 import '../../theme/lobby_theme.dart';
 
@@ -160,15 +161,9 @@ class _NotificationBadgeButton extends StatelessWidget {
         final unread = UserPresenceService.instance.unreadCount;
         return IconButton(
           tooltip: unread > 0 ? '$unread unread' : 'Notifications',
-          onPressed: () async {
-            await UserPresenceService.instance.markAllRead();
-            if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  unread > 0 ? 'Marked $unread notification(s) read' : 'No unread notifications',
-                ),
-              ),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
             );
           },
           style: IconButton.styleFrom(

@@ -37,6 +37,20 @@ class ScreenBackground extends StatelessWidget {
     );
   }
 
+  /// List-focused pages (Friends / Groups / Notifications / Invites / Recent).
+  /// Uses a dark felt gradient instead of the busy lobby photo so rows stay readable.
+  factory ScreenBackground.social({Key? key, required Widget child}) {
+    return ScreenBackground(
+      key: key,
+      enabled: false,
+      scrimOpacity: 0,
+      fallback: const BoxDecoration(gradient: LobbyColors.socialPageFallback),
+      brandTint: LobbyColors.brandTint,
+      showSuitWatermark: true,
+      child: child,
+    );
+  }
+
   /// Game-board outer frame preset from [UiConfig].
   factory ScreenBackground.board({Key? key, required Widget child}) {
     return ScreenBackground(

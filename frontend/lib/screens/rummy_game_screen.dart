@@ -231,16 +231,14 @@ class _RummyGameScreenState extends State<RummyGameScreen> {
   }
 
   /// Room is COMPLETED after MATCH_ENDED — Play Again / Leave both return
-  /// to the lobby so the player can create or join a fresh table.
+  /// to the lobby root (not Groups / Notifications / Waiting Room).
   void _returnToLobby() {
     if (!mounted) return;
     _dismissTransientDialogs();
     // Drop the old room socket so the lobby cannot send START_MATCH to a
     // completed room after the player creates a new one.
     widget.gameWs.disconnect();
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   void _startNextDeal() {

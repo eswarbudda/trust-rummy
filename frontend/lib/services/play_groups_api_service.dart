@@ -112,7 +112,30 @@ class PlayGroupsApiService {
       },
     );
     if (response.statusCode >= 400) {
-      throw Exception(_errorMessage(response.body, 'Failed to add member'));
+      throw Exception(_errorMessage(response.body, 'Failed to invite member'));
+    }
+    return PlayGroup.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<PlayGroup> acceptMemberInvite(int groupId) async {
+    final response = await _client.post(ApiConfig.playGroupMemberAcceptUri(groupId));
+    if (response.statusCode >= 400) {
+      throw Exception(_errorMessage(response.body, 'Failed to accept group invite'));
+    }
+    return PlayGroup.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<void> declineMemberInvite(int groupId) async {
+    final response = await _client.post(ApiConfig.playGroupMemberDeclineUri(groupId));
+    if (response.statusCode >= 400) {
+      throw Exception(_errorMessage(response.body, 'Failed to decline group invite'));
+    }
+  }
+
+  Future<PlayGroup> removeMember(int groupId, int userId) async {
+    final response = await _client.delete(ApiConfig.playGroupMemberUri(groupId, userId));
+    if (response.statusCode >= 400) {
+      throw Exception(_errorMessage(response.body, 'Failed to remove member'));
     }
     return PlayGroup.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
@@ -127,7 +150,6 @@ class PlayGroupsApiService {
   Future<StartGroupGameResult> startGame({
     required int groupId,
     required String gameVariant,
-    required int maxPlayers,
     required double stakeAmount,
     int? dealsPerMatch,
     String? name,
@@ -136,7 +158,6 @@ class PlayGroupsApiService {
       ApiConfig.playGroupGamesUri(groupId),
       body: {
         if (name != null && name.isNotEmpty) 'name': name,
-        'maxPlayers': maxPlayers,
         'stakeAmount': stakeAmount,
         'gameType': 'RUMMY',
         'gameVariant': gameVariant,

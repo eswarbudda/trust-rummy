@@ -4,6 +4,7 @@ import '../lobby/lobby_controller.dart';
 import '../services/recent_players_api_service.dart';
 import '../theme/lobby_theme.dart';
 import '../widgets/common/screen_background.dart';
+import '../widgets/lobby/soft_hover_row.dart';
 import 'waiting_room_screen.dart';
 
 class RecentPlayersScreen extends StatefulWidget {
@@ -93,7 +94,7 @@ class _RecentPlayersScreenState extends State<RecentPlayersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: ScreenBackground.lobby(
+      body: ScreenBackground.social(
         child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -133,57 +134,87 @@ class _RecentPlayersScreenState extends State<RecentPlayersScreen> {
                               textAlign: TextAlign.center,
                             ),
                           )
-                        : ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                            itemCount: _opponents.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final opponent = _opponents[index];
-                              return LobbyPanel(
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      backgroundColor: LobbyColors.cream,
-                                      foregroundColor: LobbyColors.ink,
-                                      child: Text(
-                                        opponent.displayName.isNotEmpty
-                                            ? opponent.displayName[0].toUpperCase()
-                                            : '?',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            opponent.displayName,
-                                            style: LobbyText.body(weight: FontWeight.w700),
+                        : Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 520),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                                itemCount: _opponents.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                                itemBuilder: (context, index) {
+                                  final opponent = _opponents[index];
+                                  return SoftHoverRow(
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 18,
+                                          backgroundColor: LobbyColors.cream,
+                                          foregroundColor: LobbyColors.ink,
+                                          child: Text(
+                                            opponent.displayName.isNotEmpty
+                                                ? opponent.displayName[0].toUpperCase()
+                                                : '?',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                           ),
-                                          Text(
-                                            '@${opponent.username} · '
-                                            '${opponent.online ? 'Online' : 'Offline'} · '
-                                            '${opponent.matchCount} matches',
-                                            style: LobbyText.bodyMuted(size: 12),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                opponent.displayName,
+                                                style: LobbyText.body(weight: FontWeight.w700, size: 14),
+                                              ),
+                                              Text(
+                                                '@${opponent.username} · '
+                                                '${opponent.online ? 'Online' : 'Offline'} · '
+                                                '${opponent.matchCount} matches',
+                                                style: LobbyText.bodyMuted(size: 12),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                        if (opponent.alreadyFriends)
+                                          Text('Friends', style: LobbyText.bodyMuted(size: 12))
+                                        else
+                                          TextButton(
+                                            onPressed: () => _addFriend(opponent),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: LobbyColors.creamMuted,
+                                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                                              minimumSize: const Size(0, 36),
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                            child: const Text('Add'),
+                                          ),
+                                        TextButton(
+                                          onPressed: () => _inviteAgain(opponent),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: LobbyColors.gold,
+                                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                                            minimumSize: const Size(0, 36),
+                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                          child: Text(
+                                            'Invite',
+                                            style: LobbyText.body(
+                                              weight: FontWeight.w800,
+                                              size: 14,
+                                              color: LobbyColors.gold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    if (opponent.alreadyFriends)
-                                      Text('Friends', style: LobbyText.bodyMuted(size: 12))
-                                    else
-                                      TextButton(
-                                        onPressed: () => _addFriend(opponent),
-                                        child: const Text('Add'),
-                                      ),
-                                    TextButton(
-                                      onPressed: () => _inviteAgain(opponent),
-                                      child: const Text('Invite'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
+                                  );
+                                },
+                              ),
+                            ),
                           ),
               ),
             ],

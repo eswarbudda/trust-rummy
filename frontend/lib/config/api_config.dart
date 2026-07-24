@@ -133,6 +133,12 @@ class ApiConfig {
   static Uri playGroupMemberUri(int id, int userId) =>
       Uri.parse('$httpBaseUrl/api/v1/play-groups/$id/members/$userId');
 
+  static Uri playGroupMemberAcceptUri(int id) =>
+      Uri.parse('$httpBaseUrl/api/v1/play-groups/$id/members/accept');
+
+  static Uri playGroupMemberDeclineUri(int id) =>
+      Uri.parse('$httpBaseUrl/api/v1/play-groups/$id/members/decline');
+
   static Uri playGroupGamesUri(int id) =>
       Uri.parse('$httpBaseUrl/api/v1/play-groups/$id/games');
 

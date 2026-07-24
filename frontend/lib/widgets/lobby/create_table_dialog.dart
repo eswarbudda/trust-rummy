@@ -8,17 +8,31 @@ class CreateTableDialog extends StatefulWidget {
   const CreateTableDialog({
     super.key,
     this.initialVariant = 'POOL_101',
+    this.hidePlayerCount = false,
+    this.title = 'Create table',
+    this.confirmLabel = 'Create',
   });
 
   final String initialVariant;
+  final bool hidePlayerCount;
+  final String title;
+  final String confirmLabel;
 
   static Future<CreateTableResult?> show(
     BuildContext context, {
     String initialVariant = 'POOL_101',
+    bool hidePlayerCount = false,
+    String title = 'Create table',
+    String confirmLabel = 'Create',
   }) {
     return showDialog<CreateTableResult>(
       context: context,
-      builder: (_) => CreateTableDialog(initialVariant: initialVariant),
+      builder: (_) => CreateTableDialog(
+        initialVariant: initialVariant,
+        hidePlayerCount: hidePlayerCount,
+        title: title,
+        confirmLabel: confirmLabel,
+      ),
     );
   }
 
@@ -62,7 +76,7 @@ class _CreateTableDialogState extends State<CreateTableDialog> {
   Widget build(BuildContext context) {
     final isDeals = _variant == 'DEALS';
     return AlertDialog(
-      title: const Text('Create table'),
+      title: Text(widget.title),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -87,23 +101,25 @@ class _CreateTableDialogState extends State<CreateTableDialog> {
                     ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Text('Players', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final n in [2, 3, 4, 5, 6])
-                    ChoiceChip(
-                      label: Text('$n'),
-                      selected: _maxPlayers == n,
-                      onSelected: (s) {
-                        if (!s) return;
-                        setState(() => _maxPlayers = n);
-                      },
-                    ),
-                ],
-              ),
+              if (!widget.hidePlayerCount) ...[
+                const SizedBox(height: 16),
+                Text('Players', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final n in [2, 3, 4, 5, 6])
+                      ChoiceChip(
+                        label: Text('$n'),
+                        selected: _maxPlayers == n,
+                        onSelected: (s) {
+                          if (!s) return;
+                          setState(() => _maxPlayers = n);
+                        },
+                      ),
+                  ],
+                ),
+              ],
               if (isDeals) ...[
                 const SizedBox(height: 16),
                 Text('Deals', style: Theme.of(context).textTheme.labelLarge),
@@ -155,7 +171,7 @@ class _CreateTableDialogState extends State<CreateTableDialog> {
               ),
             );
           },
-          child: const Text('Create'),
+          child: Text(widget.confirmLabel),
         ),
       ],
     );

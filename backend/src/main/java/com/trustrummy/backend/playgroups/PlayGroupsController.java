@@ -81,6 +81,22 @@ public class PlayGroupsController {
         return playGroupsService.addMember(requireUserId(principal), id, body.userId(), body.username());
     }
 
+    @PostMapping("/{id}/members/accept")
+    public PlayGroupResponse acceptMemberInvite(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable("id") long id
+    ) {
+        return playGroupsService.acceptMemberInvite(requireUserId(principal), id);
+    }
+
+    @PostMapping("/{id}/members/decline")
+    public PlayGroupResponse declineMemberInvite(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable("id") long id
+    ) {
+        return playGroupsService.declineMemberInvite(requireUserId(principal), id);
+    }
+
     @DeleteMapping("/{id}/members/{userId}")
     public PlayGroupResponse removeMember(
             @AuthenticationPrincipal UserDetails principal,
@@ -100,7 +116,6 @@ public class PlayGroupsController {
                 requireUserId(principal),
                 id,
                 body.name(),
-                body.maxPlayers(),
                 body.stakeAmount(),
                 body.gameType(),
                 body.gameVariant(),

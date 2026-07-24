@@ -9,6 +9,8 @@ import com.trustrummy.backend.invitations.CreateInvitationsCommand;
 import com.trustrummy.backend.invitations.InvitationPort;
 import com.trustrummy.backend.invitations.InvitationResponse;
 import com.trustrummy.backend.invitations.InvitationView;
+import com.trustrummy.backend.notifications.NotificationPort;
+import com.trustrummy.backend.notifications.NotificationTypes;
 import com.trustrummy.backend.rooms.CreateWaitingRoomCommand;
 import com.trustrummy.backend.rooms.RoomPort;
 import com.trustrummy.backend.rooms.RoomSummary;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,6 +37,7 @@ public class PlayGroupsService {
     private final FriendPort friendPort;
     private final RoomPort roomPort;
     private final InvitationPort invitationPort;
+    private final NotificationPort notificationPort;
 
     @Transactional(readOnly = true)
     public List<PlayGroupResponse> listMyGroups(long userId) {
@@ -102,11 +106,57 @@ public class PlayGroupsService {
         requireOwner(group, actorId);
 
         UserSummary target = resolveUser(targetUserId, username);
+        UserSummary actor = userLookupPort.findById(actorId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (target.id() == actorId) {
             throw new IllegalArgumentException("Owner is already a member");
         }
         if (!friendPort.areFriends(actorId, target.id())) {
-            throw new ForbiddenOperationException("Can only add accepted friends to a play group");
+            throw new ForbiddenOperationException("Can only invite accepted friends to a play group");
+        }
+
+        long occupied = memberRepository.countByGroupIdAndStatus(groupId, PlayGroupMemberStatus.ACTIVE)
+                + memberRepository.countByGroupIdAndStatus(groupId, PlayGroupMemberStatus.PENDING);
+        if (occupied >= group.getMaxMembers()) {
+            throw new IllegalStateException("Play group is full");
+        }
+
+        PlayGroupMemberEntity existing = memberRepository.findByGroupIdAndUserId(groupId, target.id()).orElse(null);
+        PlayGroupMemberEntity saved;
+        if (existing != null) {
+            if (existing.getStatus() == PlayGroupMemberStatus.ACTIVE) {
+                throw new IllegalStateException("User is already a member");
+            }
+            if (existing.getStatus() == PlayGroupMemberStatus.PENDING) {
+                throw new IllegalStateException("Invite already pending");
+            }
+            // LEFT / REMOVED → re-invite as PENDING (do not auto-activate).
+            existing.setStatus(PlayGroupMemberStatus.PENDING);
+            existing.setRole(PlayGroupMemberRole.MEMBER);
+            existing.setAddedById(actorId);
+            existing.setLeftAt(null);
+            saved = memberRepository.save(existing);
+        } else {
+            saved = memberRepository.save(PlayGroupMemberEntity.builder()
+                    .groupId(groupId)
+                    .userId(target.id())
+                    .role(PlayGroupMemberRole.MEMBER)
+                    .status(PlayGroupMemberStatus.PENDING)
+                    .addedById(actorId)
+                    .build());
+        }
+
+        notifyMemberInvite(group, actor, target, saved);
+        return toResponse(group, true);
+    }
+
+    @Transactional
+    public PlayGroupResponse acceptMemberInvite(long userId, long groupId) {
+        PlayGroupEntity group = requireActiveGroup(groupId);
+        PlayGroupMemberEntity membership = memberRepository.findByGroupIdAndUserId(groupId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Group invite not found"));
+        if (membership.getStatus() != PlayGroupMemberStatus.PENDING) {
+            throw new IllegalStateException("No pending invite for this group");
         }
 
         long activeCount = memberRepository.countByGroupIdAndStatus(groupId, PlayGroupMemberStatus.ACTIVE);
@@ -114,27 +164,39 @@ public class PlayGroupsService {
             throw new IllegalStateException("Play group is full");
         }
 
-        PlayGroupMemberEntity existing = memberRepository.findByGroupIdAndUserId(groupId, target.id()).orElse(null);
-        if (existing != null) {
-            if (existing.getStatus() == PlayGroupMemberStatus.ACTIVE) {
-                throw new IllegalStateException("User is already a member");
-            }
-            existing.setStatus(PlayGroupMemberStatus.ACTIVE);
-            existing.setRole(PlayGroupMemberRole.MEMBER);
-            existing.setAddedById(actorId);
-            existing.setLeftAt(null);
-            memberRepository.save(existing);
-        } else {
-            memberRepository.save(PlayGroupMemberEntity.builder()
-                    .groupId(groupId)
-                    .userId(target.id())
-                    .role(PlayGroupMemberRole.MEMBER)
-                    .status(PlayGroupMemberStatus.ACTIVE)
-                    .addedById(actorId)
-                    .build());
-        }
+        membership.setStatus(PlayGroupMemberStatus.ACTIVE);
+        membership.setLeftAt(null);
+        memberRepository.save(membership);
+
+        UserSummary accepter = userLookupPort.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        notificationPort.create(
+                group.getOwnerId(),
+                NotificationTypes.GROUP_MEMBER_INVITE,
+                Map.of(
+                        "event", "ACCEPTED",
+                        "groupId", group.getId(),
+                        "groupName", group.getName(),
+                        "username", accepter.username()
+                ),
+                "group-member-accepted:" + group.getId() + ":" + userId
+        );
 
         return toResponse(group, true);
+    }
+
+    @Transactional
+    public PlayGroupResponse declineMemberInvite(long userId, long groupId) {
+        PlayGroupEntity group = requireActiveGroup(groupId);
+        PlayGroupMemberEntity membership = memberRepository.findByGroupIdAndUserId(groupId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Group invite not found"));
+        if (membership.getStatus() != PlayGroupMemberStatus.PENDING) {
+            throw new IllegalStateException("No pending invite for this group");
+        }
+        membership.setStatus(PlayGroupMemberStatus.LEFT);
+        membership.setLeftAt(Instant.now());
+        memberRepository.save(membership);
+        return toResponse(group, false);
     }
 
     @Transactional
@@ -142,7 +204,8 @@ public class PlayGroupsService {
         PlayGroupEntity group = requireActiveGroup(groupId);
         PlayGroupMemberEntity membership = memberRepository.findByGroupIdAndUserId(groupId, targetUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("Member not found"));
-        if (membership.getStatus() != PlayGroupMemberStatus.ACTIVE) {
+        if (membership.getStatus() != PlayGroupMemberStatus.ACTIVE
+                && membership.getStatus() != PlayGroupMemberStatus.PENDING) {
             throw new IllegalStateException("Member is not active");
         }
         if (membership.getRole() == PlayGroupMemberRole.OWNER) {
@@ -152,8 +215,11 @@ public class PlayGroupsService {
         boolean selfLeave = actorId == targetUserId;
         if (!selfLeave) {
             requireOwner(group, actorId);
-        } else {
+        } else if (membership.getStatus() == PlayGroupMemberStatus.ACTIVE) {
             requireActiveMember(groupId, actorId);
+        } else if (membership.getStatus() != PlayGroupMemberStatus.PENDING
+                || !membership.getUserId().equals(actorId)) {
+            throw new ForbiddenOperationException("Not allowed");
         }
 
         membership.setStatus(selfLeave ? PlayGroupMemberStatus.LEFT : PlayGroupMemberStatus.REMOVED);
@@ -162,12 +228,32 @@ public class PlayGroupsService {
         return toResponse(group, true);
     }
 
+    private void notifyMemberInvite(
+            PlayGroupEntity group,
+            UserSummary inviter,
+            UserSummary invitee,
+            PlayGroupMemberEntity membership
+    ) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("groupId", group.getId());
+        payload.put("groupName", group.getName());
+        payload.put("inviterId", inviter.id());
+        payload.put("inviterUsername", inviter.username());
+        payload.put("membershipId", membership.getId());
+        notificationPort.create(
+                invitee.id(),
+                NotificationTypes.GROUP_MEMBER_INVITE,
+                payload,
+                "group-member-invite:" + group.getId() + ":" + invitee.id() + ":"
+                        + Instant.now().toEpochMilli()
+        );
+    }
+
     @Transactional
     public StartPlayGroupGameResponse startGame(
             long ownerId,
             long groupId,
             String roomName,
-            Integer maxPlayers,
             BigDecimal stakeAmount,
             GameType gameType,
             GameVariant gameVariant,
@@ -186,6 +272,9 @@ public class PlayGroupsService {
                 .filter(id -> !id.equals(ownerId))
                 .toList();
 
+        // Invite every active member; room capacity follows group size (engine max 6).
+        int seatCapacity = Math.min(6, Math.max(2, members.size()));
+
         String name = (roomName == null || roomName.isBlank())
                 ? group.getName()
                 : roomName.trim();
@@ -194,7 +283,7 @@ public class PlayGroupsService {
                 owner.username(),
                 new CreateWaitingRoomCommand(
                         name,
-                        maxPlayers,
+                        seatCapacity,
                         stakeAmount,
                         gameType != null ? gameType : GameType.RUMMY,
                         gameVariant != null ? gameVariant : GameVariant.POOL_101,
@@ -260,8 +349,12 @@ public class PlayGroupsService {
         List<PlayGroupMemberResponse> members = List.of();
         int memberCount = (int) memberRepository.countByGroupIdAndStatus(group.getId(), PlayGroupMemberStatus.ACTIVE);
         if (includeMembers) {
-            List<PlayGroupMemberEntity> rows =
+            List<PlayGroupMemberEntity> active =
                     memberRepository.findByGroupIdAndStatus(group.getId(), PlayGroupMemberStatus.ACTIVE);
+            List<PlayGroupMemberEntity> pending =
+                    memberRepository.findByGroupIdAndStatus(group.getId(), PlayGroupMemberStatus.PENDING);
+            List<PlayGroupMemberEntity> rows = new ArrayList<>(active);
+            rows.addAll(pending);
             List<Long> ids = rows.stream().map(PlayGroupMemberEntity::getUserId).toList();
             Map<Long, UserSummary> users = userLookupPort.findByIds(ids);
             List<PlayGroupMemberResponse> out = new ArrayList<>();
@@ -280,7 +373,6 @@ public class PlayGroupsService {
                 ));
             }
             members = out;
-            memberCount = out.size();
         }
         return new PlayGroupResponse(
                 group.getId(),

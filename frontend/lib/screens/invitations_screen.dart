@@ -4,6 +4,7 @@ import '../lobby/lobby_controller.dart';
 import '../services/invitations_api_service.dart';
 import '../theme/lobby_theme.dart';
 import '../widgets/common/screen_background.dart';
+import '../widgets/lobby/soft_hover_row.dart';
 import 'waiting_room_screen.dart';
 
 class InvitationsScreen extends StatefulWidget {
@@ -90,7 +91,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: ScreenBackground.lobby(
+      body: ScreenBackground.social(
         child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -127,52 +128,73 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                               style: LobbyText.bodyMuted(),
                             ),
                           )
-                        : ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                            itemCount: _items.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final invite = _items[index];
-                              return LobbyPanel(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    Text(
-                                      '@${invite.inviterUsername ?? 'host'} invited you',
-                                      style: LobbyText.body(weight: FontWeight.w800),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Room ${invite.roomCode}'
-                                      '${invite.groupId != null ? ' · from a play group' : ''}',
-                                      style: LobbyText.bodyMuted(size: 12),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Row(
+                        : Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 520),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                                itemCount: _items.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                                itemBuilder: (context, index) {
+                                  final invite = _items[index];
+                                  return SoftHoverRow(
+                                    child: Row(
                                       children: [
                                         Expanded(
-                                          child: OutlinedButton(
-                                            onPressed: () => _decline(invite),
-                                            child: const Text('Decline'),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '@${invite.inviterUsername ?? 'host'} invited you',
+                                                style: LobbyText.body(
+                                                  weight: FontWeight.w800,
+                                                  size: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                'Room ${invite.roomCode}'
+                                                '${invite.groupId != null ? ' · from a play group' : ''}',
+                                                style: LobbyText.bodyMuted(size: 12),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: FilledButton(
-                                            onPressed: () => _accept(invite),
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor: LobbyColors.gold,
-                                              foregroundColor: LobbyColors.ink,
+                                        TextButton(
+                                          onPressed: () => _decline(invite),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: LobbyColors.creamMuted,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                                            minimumSize: const Size(0, 36),
+                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                          child: const Text('Decline'),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        TextButton(
+                                          onPressed: () => _accept(invite),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: LobbyColors.gold,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                                            minimumSize: const Size(0, 36),
+                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                          child: Text(
+                                            'Accept',
+                                            style: LobbyText.body(
+                                              weight: FontWeight.w800,
+                                              size: 14,
+                                              color: LobbyColors.gold,
                                             ),
-                                            child: const Text('Accept'),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ],
-                                ),
-                              );
-                            },
+                                  );
+                                },
+                              ),
+                            ),
                           ),
               ),
             ],

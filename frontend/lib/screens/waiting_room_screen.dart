@@ -184,7 +184,11 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
       ),
     );
     await widget.lobby.clearFinishedRoom(widget.roomCode);
-    if (mounted) Navigator.of(context).pop();
+    // Match exit already pops to lobby root; if we are still mounted (e.g.
+    // unexpected early return), land on lobby rather than Groups/Invites.
+    if (mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   Future<void> _leave() async {

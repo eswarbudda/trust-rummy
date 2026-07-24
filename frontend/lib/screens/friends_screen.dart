@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import '../services/friends_api_service.dart';
 import '../theme/lobby_theme.dart';
 import '../widgets/common/screen_background.dart';
+import '../widgets/lobby/soft_hover_row.dart';
 
 class FriendsScreen extends StatefulWidget {
-  const FriendsScreen({super.key});
+  const FriendsScreen({super.key, this.initialTab = 0});
+
+  /// 0 = Friends list, 1 = Requests.
+  final int initialTab;
 
   @override
   State<FriendsScreen> createState() => _FriendsScreenState();
@@ -23,7 +27,8 @@ class _FriendsScreenState extends State<FriendsScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    final tab = widget.initialTab.clamp(0, 1);
+    _tabs = TabController(length: 2, vsync: this, initialIndex: tab);
     _load();
   }
 
@@ -152,7 +157,7 @@ class _FriendsScreenState extends State<FriendsScreen> with SingleTickerProvider
         icon: const Icon(Icons.person_add_alt_1_rounded),
         label: const Text('Add friend'),
       ),
-      body: ScreenBackground.lobby(
+      body: ScreenBackground.social(
         child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -230,44 +235,55 @@ class _FriendsList extends StatelessWidget {
         child: Text('No friends yet — add someone by username.', style: LobbyText.bodyMuted()),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-      itemCount: friends.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final friend = friends[index];
-        return LobbyPanel(
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: LobbyColors.cream,
-                foregroundColor: LobbyColors.ink,
-                child: Text(friend.displayName.isNotEmpty
-                    ? friend.displayName[0].toUpperCase()
-                    : '?'),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(friend.displayName, style: LobbyText.body(weight: FontWeight.w700)),
-                    Text(
-                      '@${friend.username} · ${friend.online ? 'Online' : 'Offline'}',
-                      style: LobbyText.bodyMuted(size: 12),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+          itemCount: friends.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 6),
+          itemBuilder: (context, index) {
+            final friend = friends[index];
+            return SoftHoverRow(
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: LobbyColors.cream,
+                    foregroundColor: LobbyColors.ink,
+                    child: Text(
+                      friend.displayName.isNotEmpty
+                          ? friend.displayName[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(friend.displayName, style: LobbyText.body(weight: FontWeight.w700, size: 14)),
+                        Text(
+                          '@${friend.username} · ${friend.online ? 'Online' : 'Offline'}',
+                          style: LobbyText.bodyMuted(size: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Remove friend',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => onUnfriend(friend),
+                    icon: const Icon(Icons.person_remove_alt_1_rounded, color: LobbyColors.coral, size: 20),
+                  ),
+                ],
               ),
-              IconButton(
-                tooltip: 'Remove friend',
-                onPressed: () => onUnfriend(friend),
-                icon: const Icon(Icons.person_remove_alt_1_rounded, color: LobbyColors.coral),
-              ),
-            ],
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -294,41 +310,47 @@ class _RequestsList extends StatelessWidget {
         child: Text('No pending requests.', style: LobbyText.bodyMuted()),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-      itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = items[index];
-        final incoming = item.direction == 'INCOMING';
-        return LobbyPanel(
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.otherDisplayName,
-                      style: LobbyText.body(weight: FontWeight.w700),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 6),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            final incoming = item.direction == 'INCOMING';
+            return SoftHoverRow(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.otherDisplayName,
+                          style: LobbyText.body(weight: FontWeight.w700, size: 14),
+                        ),
+                        Text(
+                          incoming
+                              ? '@${item.otherUsername} wants to be friends'
+                              : 'Outgoing to @${item.otherUsername}',
+                          style: LobbyText.bodyMuted(size: 12),
+                        ),
+                      ],
                     ),
-                    Text(
-                      incoming
-                          ? '@${item.otherUsername} wants to be friends'
-                          : 'Outgoing to @${item.otherUsername}',
-                      style: LobbyText.bodyMuted(size: 12),
-                    ),
+                  ),
+                  if (incoming) ...[
+                    TextButton(onPressed: () => onDecline(item), child: const Text('Decline')),
+                    TextButton(onPressed: () => onAccept(item), child: const Text('Accept')),
                   ],
-                ),
+                ],
               ),
-              if (incoming) ...[
-                TextButton(onPressed: () => onDecline(item), child: const Text('Decline')),
-                TextButton(onPressed: () => onAccept(item), child: const Text('Accept')),
-              ],
-            ],
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }

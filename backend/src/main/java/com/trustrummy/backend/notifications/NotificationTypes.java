@@ -10,6 +10,8 @@ public final class NotificationTypes {
     public static final String FRIEND_ACCEPTED = "FRIEND_ACCEPTED";
     public static final String ROOM_INVITATION = "ROOM_INVITATION";
     public static final String GROUP_INVITATION = "GROUP_INVITATION";
+    /** Invite to join a play group as a member (not a game-room invite). */
+    public static final String GROUP_MEMBER_INVITE = "GROUP_MEMBER_INVITE";
     public static final String TOURNAMENT_INVITATION = "TOURNAMENT_INVITATION";
     public static final String WALLET_DEPOSIT_SUCCESS = "WALLET_DEPOSIT_SUCCESS";
     public static final String WALLET_WITHDRAWAL_SUCCESS = "WALLET_WITHDRAWAL_SUCCESS";

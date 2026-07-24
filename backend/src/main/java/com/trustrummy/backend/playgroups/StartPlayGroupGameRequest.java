@@ -8,9 +8,12 @@ import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
 
+/**
+ * Start-game payload for a play group. Seat capacity is derived server-side
+ * from active member count (capped at 6) — clients do not send maxPlayers.
+ */
 public record StartPlayGroupGameRequest(
         String name,
-        @NotNull @Min(2) @Max(6) Integer maxPlayers,
         @NotNull BigDecimal stakeAmount,
         GameType gameType,
         GameVariant gameVariant,

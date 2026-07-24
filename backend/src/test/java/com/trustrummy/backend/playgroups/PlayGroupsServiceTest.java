@@ -39,13 +39,21 @@ class PlayGroupsServiceTest {
     private com.trustrummy.backend.rooms.RoomPort roomPort;
     @Mock
     private com.trustrummy.backend.invitations.InvitationPort invitationPort;
+    @Mock
+    private com.trustrummy.backend.notifications.NotificationPort notificationPort;
 
     private PlayGroupsService service;
 
     @BeforeEach
     void setUp() {
         service = new PlayGroupsService(
-                groupRepository, memberRepository, userLookupPort, friendPort, roomPort, invitationPort);
+                groupRepository,
+                memberRepository,
+                userLookupPort,
+                friendPort,
+                roomPort,
+                invitationPort,
+                notificationPort);
     }
 
     @Test
@@ -82,38 +90,33 @@ class PlayGroupsServiceTest {
     }
 
     @Test
-    void addMemberRequiresFriendship() {
-        PlayGroupEntity group = activeGroup(10L, 1L);
-        when(groupRepository.findById(10L)).thenReturn(Optional.of(group));
-        when(userLookupPort.findById(2L)).thenReturn(Optional.of(new UserSummary(2L, "bob", "Bob")));
-        when(friendPort.areFriends(1L, 2L)).thenReturn(false);
-
-        assertThatThrownBy(() -> service.addMember(1L, 10L, 2L, null))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("friends");
-        verify(memberRepository, never()).save(any());
-    }
-
-    @Test
-    void addMemberSucceedsForAcceptedFriend() {
+    void addMemberCreatesPendingInviteAndNotifies() {
         PlayGroupEntity group = activeGroup(10L, 1L);
         when(groupRepository.findById(10L)).thenReturn(Optional.of(group));
         when(userLookupPort.findById(1L)).thenReturn(Optional.of(new UserSummary(1L, "alice", "Alice")));
         when(userLookupPort.findById(2L)).thenReturn(Optional.of(new UserSummary(2L, "bob", "Bob")));
         when(friendPort.areFriends(1L, 2L)).thenReturn(true);
         when(memberRepository.countByGroupIdAndStatus(10L, PlayGroupMemberStatus.ACTIVE)).thenReturn(1L);
+        when(memberRepository.countByGroupIdAndStatus(10L, PlayGroupMemberStatus.PENDING)).thenReturn(0L);
         when(memberRepository.findByGroupIdAndUserId(10L, 2L)).thenReturn(Optional.empty());
-        when(memberRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(memberRepository.save(any())).thenAnswer(inv -> {
+            PlayGroupMemberEntity m = inv.getArgument(0);
+            m.setId(99L);
+            return m;
+        });
         when(memberRepository.findByGroupIdAndStatus(10L, PlayGroupMemberStatus.ACTIVE))
                 .thenReturn(List.of(
                         PlayGroupMemberEntity.builder()
                                 .groupId(10L).userId(1L).role(PlayGroupMemberRole.OWNER)
-                                .status(PlayGroupMemberStatus.ACTIVE).joinedAt(Instant.now()).build(),
-                        PlayGroupMemberEntity.builder()
-                                .groupId(10L).userId(2L).role(PlayGroupMemberRole.MEMBER)
                                 .status(PlayGroupMemberStatus.ACTIVE).joinedAt(Instant.now()).build()
                 ));
-        when(userLookupPort.findByIds(eq(List.of(1L, 2L))))
+        when(memberRepository.findByGroupIdAndStatus(10L, PlayGroupMemberStatus.PENDING))
+                .thenReturn(List.of(
+                        PlayGroupMemberEntity.builder()
+                                .groupId(10L).userId(2L).role(PlayGroupMemberRole.MEMBER)
+                                .status(PlayGroupMemberStatus.PENDING).joinedAt(Instant.now()).build()
+                ));
+        when(userLookupPort.findByIds(any()))
                 .thenReturn(Map.of(
                         1L, new UserSummary(1L, "alice", "Alice"),
                         2L, new UserSummary(2L, "bob", "Bob")
@@ -121,8 +124,30 @@ class PlayGroupsServiceTest {
 
         PlayGroupResponse response = service.addMember(1L, 10L, 2L, null);
 
-        assertThat(response.memberCount()).isEqualTo(2);
-        verify(memberRepository).save(any(PlayGroupMemberEntity.class));
+        assertThat(response.memberCount()).isEqualTo(1);
+        ArgumentCaptor<PlayGroupMemberEntity> member = ArgumentCaptor.forClass(PlayGroupMemberEntity.class);
+        verify(memberRepository).save(member.capture());
+        assertThat(member.getValue().getStatus()).isEqualTo(PlayGroupMemberStatus.PENDING);
+        verify(notificationPort).create(
+                eq(2L),
+                eq(com.trustrummy.backend.notifications.NotificationTypes.GROUP_MEMBER_INVITE),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void addMemberRequiresFriendship() {
+        PlayGroupEntity group = activeGroup(10L, 1L);
+        when(groupRepository.findById(10L)).thenReturn(Optional.of(group));
+        when(userLookupPort.findById(1L)).thenReturn(Optional.of(new UserSummary(1L, "alice", "Alice")));
+        when(userLookupPort.findById(2L)).thenReturn(Optional.of(new UserSummary(2L, "bob", "Bob")));
+        when(friendPort.areFriends(1L, 2L)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.addMember(1L, 10L, 2L, null))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("friends");
+        verify(memberRepository, never()).save(any());
     }
 
     @Test

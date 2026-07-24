@@ -53,10 +53,21 @@ class LobbyColors {
   static const Color chipPurple = chipMaroon;
   static const Color chipPurpleDeep = chipMaroonDeep;
 
+  /// Accent border for groups the signed-in user owns.
+  static const Color groupOwned = Color(0xFFB794F6);
+  static const Color groupOwnedDeep = Color(0xFF7C5CBF);
+
   static const LinearGradient pageFallback = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [Color(0xFF0D2818), Color(0xFF122018), Color(0xFF2A1014)],
+  );
+
+  /// Darker felt wash for list pages (Friends, Groups, Notifications, …).
+  static const LinearGradient socialPageFallback = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFF0A1F14), Color(0xFF0D2818), Color(0xFF071A12)],
   );
 
   static const LinearGradient brandTint = LinearGradient(
